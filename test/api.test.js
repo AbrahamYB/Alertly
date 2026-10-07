@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.ALERTLY_TEST_URL || `http://localhost:${PORT}`;
@@ -61,6 +62,30 @@ test("GET /api/chat/quota returns daily quota tracking state", async () => {
 test("Moderation data is unavailable without staff authentication", async () => {
   const res = await fetch(`${BASE_URL}/api/moderation/reports`);
   assert.notEqual(res.status, 200);
+});
+
+test("validation-only and rejected report uploads leave no files behind", async () => {
+  const uploadsDir = process.env.UPLOADS_DIR;
+  assert.ok(uploadsDir);
+  const originalFiles = fs.readdirSync(uploadsDir).sort();
+  const validGeometry = {
+    type: "Polygon",
+    coordinates: [[[-87.65, 15.5], [-87.64, 15.5], [-87.64, 15.49], [-87.65, 15.49], [-87.65, 15.5]]],
+  };
+
+  const validateForm = new FormData();
+  validateForm.append("reportData", JSON.stringify({ type: "Flood", text: "Validation only", geometry: validGeometry }));
+  validateForm.append("images", new Blob(["not-retained"], { type: "image/jpeg" }), "validation.jpg");
+  const validateResponse = await fetch(`${BASE_URL}/api/reports/publish?validate=true`, { method: "POST", body: validateForm });
+  assert.equal(validateResponse.status, 200);
+  assert.deepEqual(fs.readdirSync(uploadsDir).sort(), originalFiles);
+
+  const rejectedForm = new FormData();
+  rejectedForm.append("reportData", JSON.stringify({ type: "Flood", text: "Invalid point", geometry: { type: "Point", coordinates: [-87.65, 15.5] } }));
+  rejectedForm.append("images", new Blob(["also-not-retained"], { type: "image/jpeg" }), "rejected.jpg");
+  const rejectedResponse = await fetch(`${BASE_URL}/api/reports/publish`, { method: "POST", body: rejectedForm });
+  assert.equal(rejectedResponse.status, 400);
+  assert.deepEqual(fs.readdirSync(uploadsDir).sort(), originalFiles);
 });
 
 test("Full Community Report lifecycle: publish, removal request, resolution, delete", async () => {

@@ -11,7 +11,7 @@
 stream/
 ├── server.js               ← Express app, all routes, sessions, purge jobs, rate limits
 ├── automation.js           ← Feed fetchers (child process, auto-restart)
-├── worker_manager.js       ← Forks automation.js, IPC bridge
+├── worker_manager.js       ← Starts and supervises automation.js
 ├── package.json
 │
 ├── lib/
@@ -51,6 +51,8 @@ stream/
 │   ├── domain.test.js      ← Normalization + grouping tests
 │   ├── fixed-schedule.test.js ← Guatemala midnight/noon schedule tests
 │   ├── frontend-static.test.js ← No-window page syntax and moderation wiring checks
+│   ├── automation-static.test.js ← Provider-to-refresh-cycle connection check
+│   ├── provider-status.test.js ← Provider health and stale-window tests
 │   ├── media-compressor.test.js ← 720p / 2MB video & image compression tests
 │   ├── report-moderator-ai.test.js ← Vision + report AI verification tests
 │   ├── security.test.js    ← Rate limiting, daily quota, bounds, and auth tests
@@ -89,7 +91,7 @@ stream/
 | GET | `/api/moderation/reports` | `requireModeratorOrAdmin` | All reports for moderation UI |
 | PATCH | `/api/moderation/reports/:id` | `requireModeratorOrAdmin` | Update report (reject, restore, edit, merge, note) |
 | DELETE | `/api/moderation/reports/:id` | `requireModeratorOrAdmin` | Permanently delete report + attachments |
-| POST | `/api/reports/publish` | `publishLimiter` | Submit report (≤5 files, ≤25MB, UUID filenames) |
+| POST | `/api/reports/publish` | `publishLimiter` | Submit report (≤5 files, ≤50MB each, UUID filenames) |
 | POST | `/api/removal` | `removalLimiter` | Request community report removal |
 | POST | `/api/moderation/reports/:id/verify-ai` | `requireModeratorOrAdmin` | On-demand AI verification & vision re-check |
 | POST | `/api/moderation/reports/:id/removal-requests/:reqId/resolve` | `requireModeratorOrAdmin` | Accept or dismiss removal request |
@@ -124,8 +126,8 @@ stream/
 | `saveReports(reports)` | Atomic write to `data/reports.json` via `.tmp` rename |
 | `purgeExpiredReports(now)` | Remove reports and orphan uploads older than 30 days |
 | `purgeExpiredAutomatedHazards(now)` | Remove automated hazards older than 30 days |
-| `requireAdmin(req, res, next)` | Guard checking `ADMIN_API_KEY` (Bearer/header/cookie) or localhost |
-| `requireModeratorOrAdmin(req, res, next)` | Guard checking moderator or admin authorization |
+| `requireAdmin(req, res, next)` | Guard requiring a valid invite-only staff session |
+| `requireModeratorOrAdmin(req, res, next)` | Guard requiring a valid owner or staff session |
 | `getOrCreateSession(req, res)` | Get or create chat session (6h TTL) |
 | `resetSession(sid)` | Delete a session by ID |
 | `send(value)` | Write a legacy SSE data frame when JSON mode is not requested |
@@ -138,6 +140,7 @@ stream/
 |--------|---------|-------------|
 | `scripts/backup.js` | `npm run backup` | Creates timestamped snapshot of reports, hazards, and config in `backups/` |
 | `scripts/restore.js` | `npm run restore [file]` | Restores data files from a backup snapshot |
+| `scripts/seed.js` | `npm run seed:demo` | Backs up and writes a visibility-consistent demo dataset |
 | `installer/scripts/setup.js` | installer bootstrap | Writes versioned hardware/deployment choices without changing services |
 | `scripts/test.js` | `npm test` | Runs unit tests plus isolated API and staff HTTP checks |
 
@@ -208,7 +211,6 @@ stream/
 | Symbol | Description |
 |--------|-------------|
 | `startAutomation()` | Fork `automation.js`, auto-restart on crash |
-| `sendToWorker(msg)` | Send IPC `"trigger"` to child to force refresh |
 
 ### Automation Feeds (child process)
 | Function | Feed |
@@ -363,28 +365,30 @@ Key functions
 | `AI_API_KEY` | required | Groq API key |
 | `AI_PROVIDER` | `groq` | `groq` or `compatible` |
 | `AI_BASE_URL` | Groq endpoint | Override for compatible providers |
-| `AI_MODEL` | `groq/compound-mini` | Model name |
+| `CHAT_AI_MODEL` | `openai/gpt-oss-20b` | Public assistant model |
+| `REPORT_AI_TEXT_MODEL` | `openai/gpt-oss-20b` | Text-only report review model |
+| `REPORT_AI_VISION_MODEL` | `qwen/qwen3.8-27b` | Visual report review model |
 | `AI_WEB_SEARCH` | `true` | Enable Groq web search tool |
 | `ENABLE_AUTOMATION` | `false` | Fork automation worker |
 | `HAZARD_BBOX` | Central America | `minLon,minLat,maxLon,maxLat` |
+| `HAZARD_REFRESH_TIMES` | `00:00,12:00` | Fixed daily refresh times |
+| `HAZARD_REFRESH_TIMEZONE` | `America/Guatemala` | Refresh schedule time zone |
+| `PROVIDER_STALE_HOURS` | `13` | Provider health delay threshold |
 | `FIRMS_MAP_KEY` | — | NASA FIRMS key (fire hotspots) |
 | `PORT` | `3000` | Server port |
+| `TRUST_PROXY` | `loopback` | Trusted reverse proxy scope |
 
 ---
 
-## Groq Limits (Free Tier — `groq/compound-mini`)
+## Provider Limits
 
-| Metric | Limit |
-|--------|-------|
-| RPM | 30 |
-| RPD | **250** ← daily cap, tightest limit |
-| TPM | 70,000 |
+Provider quotas and prices are external, account-specific, and subject to change. Alertly records privacy-safe usage aggregates and the latest returned limit headers for staff inspection; verify current limits in the provider's official dashboard.
 
 ---
 
 ## Architectural Rules (do not break these)
 
-- `/hazard-admin` and `/api/admin/*` require an authenticated owner/staff or configured administrator key; localhost fallback is development-only
+- `/hazard-admin`, `/api/admin/*`, and `/api/moderation/*` require an authenticated invite-only owner/staff session
 - All HTML is single large inline files — preserve script/style block boundaries
 - `automation.js` runs as a **separate process** with its own file I/O copies — no shared state with server
 - Runtime reports/hazards remain file-backed in the demo build; `postgres-job-queue.js` is the optional durable queue foundation for organization deployments

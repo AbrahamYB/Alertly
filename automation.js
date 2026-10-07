@@ -4,6 +4,7 @@ import * as cheerio from "cheerio";
 import fs from "fs";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
+import { replaceFileSync } from "./lib/file-utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,23 @@ function timestampOf(value) {
   return new Date(value).getTime();
 }
 
+function isoTimestamp(value, fallback = Date.now()) {
+  const timestamp = timestampOf(value);
+  return new Date(Number.isFinite(timestamp) ? timestamp : fallback).toISOString();
+}
+
+function parseWktPolygon(value) {
+  const match = String(value || "").match(/POLYGON\s*\(\(([\s\S]*)\)\)\s*$/i);
+  if (!match) return null;
+  const rings = match[1].split(/\)\s*,\s*\(/).map((ring) =>
+    ring.split(/\s*,\s*/).map((pair) => pair.trim().split(/\s+/).slice(0, 2).map(Number))
+  );
+  if (!rings.length || rings.some((ring) => ring.length < 4 || ring.some((point) => point.length !== 2 || !point.every(Number.isFinite)))) {
+    return null;
+  }
+  return rings;
+}
+
 function isRecentProviderFeature(feature, now = Date.now()) {
   if (!feature?.properties?.automated) return true;
   const properties = feature.properties;
@@ -56,27 +74,32 @@ function getHazards() {
 }
 
 function saveHazards(data) {
+  const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
     // Track specific sync metadata in root to show in UI
     data.lastUpdated = new Date().toISOString();
     data.status = "Monitoring";
 
-    const tmpPath = HAZARDS_FILE + ".tmp";
+    fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
-    fs.renameSync(tmpPath, HAZARDS_FILE);
+    replaceFileSync(tmpPath, HAZARDS_FILE);
   } catch (e) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
     console.error("Failed to save hazards:", e);
+    throw e;
   }
 }
 
 function saveHazardMetadata(patch) {
+  const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
     const hazards = getHazards();
     Object.assign(hazards, patch);
-    const tmpPath = HAZARDS_FILE + ".tmp";
+    fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
     fs.writeFileSync(tmpPath, JSON.stringify(hazards, null, 2));
-    fs.renameSync(tmpPath, HAZARDS_FILE);
+    replaceFileSync(tmpPath, HAZARDS_FILE);
   } catch (e) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
     console.error("Metadata save failed:", e);
   }
 }
@@ -92,7 +115,6 @@ function formatDateString(str) {
 }
 
 let isRefreshing = false;
-process.on("message", msg => { if (msg === "trigger") refreshAutomatedHazards(); });
 
 async function fetchUSGSEarthquakes() {
   const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
@@ -115,7 +137,7 @@ async function fetchUSGSEarthquakes() {
         source: "usgs",
         sourceType: "official seismic feed",
         sourceUrl: f.properties.url,
-        extId: f.id,
+        extId: `usgs_${f.id}`,
         detectedAt: new Date(f.properties.time).toISOString(),
         lastUpdatedAt: new Date(f.properties.updated || f.properties.time).toISOString(),
         createdAt: new Date(f.properties.time).toISOString()
@@ -123,7 +145,7 @@ async function fetchUSGSEarthquakes() {
     }));
   } catch (e) {
     console.error("[Automation] USGS Fetch failed:", e.message);
-    return [];
+    return null;
   }
 }
 
@@ -135,7 +157,7 @@ async function fetchNASAFires() {
   const dayRange = Math.min(5, Math.max(1, Number(process.env.FIRMS_DAY_RANGE || 1)));
   if (!apiKey) {
     console.warn("[Automation] NASA FIRMS disabled: FIRMS_MAP_KEY is not set.");
-    return [];
+    return null;
   }
 
   try {
@@ -181,7 +203,7 @@ async function fetchNASAFires() {
     }).filter(feature => feature.geometry.coordinates.every(Number.isFinite));
   } catch (e) {
     console.error("[Automation] NASA FIRMS failed:", e.message);
-    return [];
+    return null;
   }
 }
 
@@ -233,7 +255,7 @@ async function fetchNASAEonet() {
     }).filter((feature) => feature && featureInHazardRegion(feature, BBOX));
   } catch (e) {
     console.error("[Automation] NASA EONET failed:", e.message);
-    return [];
+    return null;
   }
 }
 
@@ -241,10 +263,9 @@ async function fetchNASAEonet() {
 async function fetchRSOEEDIS() {
   const url = `https://rsoe-edis.org/gateway/webapi/events/cluster?zoom=3`;
   try {
-     const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-     if (!resp.ok) return [];
+     const resp = await fetchOfficial(url);
      const data = await resp.json();
-     if (!data.features) return [];
+     if (!Array.isArray(data.features)) throw new Error("Invalid RSOE response.");
 
      const catMap = {
        "GE": { "ERQ": "earthquake", "VOL": "volcano" },
@@ -252,47 +273,53 @@ async function fetchRSOEEDIS() {
        "WE": { "STO": "storm", "FL": "flood", "EXR": "flood" }
      };
 
-     return data.features.map(f => {
-        const cat = f.properties.category;
-        const sub = f.properties.subCategory;
+     return data.features.flatMap(f => {
+        const properties = f?.properties || {};
+        const cat = properties.category;
+        const sub = properties.subCategory;
         const hazard = catMap[cat]?.[sub] || "other";
-        
-        const coordinates = f.geometry.coordinates;
-        const providerDate = f.properties.lastUpdate || f.properties.eventDate;
-        const providerTimestamp = timestampOf(providerDate);
-        const providerDateIso = new Date(
-          Number.isFinite(providerTimestamp) ? providerTimestamp : Date.now()
-        ).toISOString();
-        const place = f.properties.centroid || f.properties.location || `${coordinates[1].toFixed(3)}, ${coordinates[0].toFixed(3)}`;
-        const eventCount = Number(f.properties.count || f.properties.aggregated || 1);
-        const eventId = f.properties.id
-          ? `${f.properties.id}_${f.properties.subId || 0}`
-          : `${cat}_${sub}_${coordinates[0]}_${coordinates[1]}`;
-        const eventTitle = f.properties.title || `${f.properties.categoryName || hazard} near ${place}`;
 
-        return {
+        const coordinates = f?.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates)
+          ? f.geometry.coordinates.map(Number)
+          : null;
+        if (!f?.geometry || !featureInHazardRegion(f, BBOX)) return [];
+        const providerDate = properties.lastUpdate || properties.eventDate;
+        const providerTimestamp = timestampOf(providerDate);
+        const providerDateIso = isoTimestamp(providerTimestamp);
+        const coordinateLabel = coordinates?.every(Number.isFinite)
+          ? `${coordinates[1].toFixed(3)}, ${coordinates[0].toFixed(3)}`
+          : "reported area";
+        const place = properties.centroid || properties.location || coordinateLabel;
+        const eventCount = Number(properties.count || properties.aggregated || 1);
+        const eventId = properties.id
+          ? `${properties.id}_${properties.subId || 0}`
+          : `${cat || "event"}_${sub || "other"}_${coordinates?.join("_") || providerDateIso}`;
+        const eventTitle = properties.title || `${properties.categoryName || hazard} near ${place}`;
+
+        return [{
            type: "Feature",
            geometry: f.geometry,
            properties: {
               hazard: hazard,
-              severity: f.properties.severity === "high" ? "high" : "medium",
-              notes: `${eventTitle}. ${f.properties.details || `${eventCount} nearby event${eventCount === 1 ? "" : "s"}.`} Severity: ${f.properties.severity || "unknown"}.`,
+              severity: properties.severity === "high" ? "high" : "medium",
+              confidence: "probable",
+              title: eventTitle,
+              notes: `${eventTitle}. ${properties.details || `${eventCount} nearby event${eventCount === 1 ? "" : "s"}.`} Severity: ${properties.severity || "unknown"}.`,
               automated: true,
               source: "rsoe_edis",
-              sourceUrl: f.properties.link || f.properties.source || "https://rsoe-edis.org/eventMap",
+              sourceType: "official disaster feed",
+              sourceUrl: properties.link || properties.source || "https://rsoe-edis.org/eventMap",
               extId: `edis_${eventId}`,
               eventDate: providerDateIso,
+              detectedAt: providerDateIso,
               lastUpdatedAt: providerDateIso,
               createdAt: providerDateIso
            }
-        };
-     }).filter(f => {
-        const [lon, lat] = f.geometry.coordinates;
-        return lon >= BBOX[0] && lon <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3];
+        }];
      });
   } catch (e) {
      console.error("[Automation] RSOE EDIS failed:", e.message);
-     return [];
+     return null;
   }
 }
 
@@ -300,15 +327,14 @@ async function fetchRSOEEDIS() {
 async function fetchCopernicusEMS() {
   const listUrl = `https://mapping.emergency.copernicus.eu/activations/api/activations/?limit=50`; 
   try {
-     const resp = await fetch(listUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-     if (!resp.ok) return [];
+     const resp = await fetchOfficial(listUrl);
      const data = await resp.json();
-     if (!data.results) return [];
+     if (!Array.isArray(data.results)) throw new Error("Invalid Copernicus response.");
 
      const features = [];
      for (const e of data.results) {
         // Parse Centroid WKT
-        const centroidMatch = e.centroid?.match(/POINT \((-?\d+\.\d+) (-?\d+\.\d+)\)/);
+        const centroidMatch = e.centroid?.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i);
         let coords = [0, 0];
         if (centroidMatch) {
            coords = [parseFloat(centroidMatch[1]), parseFloat(centroidMatch[2])];
@@ -318,48 +344,53 @@ async function fetchCopernicusEMS() {
         
         if (!isBboxMatch) continue;
 
-        const catMap = { "flood": "flood", "fire": "fire", "storm": "storm", "volcan": "volcano", "earthquake": "earthquake" };
-        const hazard = catMap[e.category?.slug] || "other";
+        const categorySlug = String(e.category?.slug || "").toLowerCase();
+        const hazard = categorySlug.includes("flood") ? "flood"
+          : categorySlug.includes("fire") ? "fire"
+          : categorySlug.includes("storm") || categorySlug.includes("cyclone") ? "storm"
+          : categorySlug.includes("volcan") ? "volcano"
+          : categorySlug.includes("earthquake") ? "earthquake"
+          : "other";
 
         // Fetch Activation Details (which includes AOI Polygons)
         try {
            const actDetailUrl = `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${e.code}`;
-           const actResp = await fetch(actDetailUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+           const actResp = await fetchOfficial(actDetailUrl);
            if (actResp.ok) {
               const actData = await actResp.json();
               const activationInfo = actData.results?.[0];
               if (activationInfo && activationInfo.aois && activationInfo.aois.length > 0) {
-                 activationInfo.aois.forEach(aoi => {
+                 const featureCountBeforeAois = features.length;
+                 for (const aoi of activationInfo.aois) {
                     // Copernicus AOIs use WKT "POLYGON ((...))" in the 'extent' field
                     if (aoi.extent) {
-                       const polygonMatch = aoi.extent.match(/POLYGON \(\(([\s\S]*)\)\)/);
-                       if (polygonMatch) {
-                          const rings = polygonMatch[1].split("), (").map(ring => {
-                             return ring.split(", ").map(pair => {
-                                const [lon, lat] = pair.trim().split(" ");
-                                return [parseFloat(lon), parseFloat(lat)];
-                             });
-                          });
-                          
+                       const rings = parseWktPolygon(aoi.extent);
+                       if (rings) {
+                          const activationAt = isoTimestamp(e.activationTime);
                           features.push({
                              type: "Feature",
                              geometry: { type: "Polygon", coordinates: rings }, 
                              properties: {
                                 hazard: hazard,
                                 severity: "high",
+                                confidence: "confirmed",
+                                title: e.name || `Copernicus EMS activation ${e.code}`,
                                 notes: `Copernicus EMS Layer: ${aoi.name} (AOI ${aoi.number}). Event: ${e.name} (${e.code}).`,
                                 automated: true,
                                 source: "copernicus",
+                                sourceType: "official emergency mapping activation",
                                 sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
                                 extId: `ems_aoi_${aoi.id || aoi.number}_${e.code}`,
-                                createdAt: new Date(e.activationTime).toLocaleString()
+                                detectedAt: activationAt,
+                                lastUpdatedAt: activationAt,
+                                createdAt: activationAt
                              }
                           });
                        }
                     }
-                 });
+                 }
                  // If we successfully added AOI polygons, we skip adding the centroid fallback
-                 continue; 
+                 if (features.length > featureCountBeforeAois) continue;
               }
            }
         } catch (aoiErr) {
@@ -368,18 +399,24 @@ async function fetchCopernicusEMS() {
 
         // Fallback to point centroid if AOI details weren't available
         if (centroidMatch) {
+           const activationAt = isoTimestamp(e.activationTime);
            features.push({
               type: "Feature",
               geometry: { type: "Point", coordinates: coords },
               properties: {
                  hazard: hazard,
                  severity: "high",
+                 confidence: "confirmed",
+                 title: e.name || `Copernicus EMS activation ${e.code}`,
                  notes: `Copernicus EMS Deployment: ${e.name} (${e.code}). ${e.search_snippet?.substring(0, 150)}...`,
                  automated: true,
                  source: "copernicus",
+                 sourceType: "official emergency mapping activation",
                  sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
                  extId: `ems_${e.code}`,
-                 createdAt: new Date(e.activationTime).toLocaleString()
+                 detectedAt: activationAt,
+                 lastUpdatedAt: activationAt,
+                 createdAt: activationAt
               }
            });
         }
@@ -387,7 +424,7 @@ async function fetchCopernicusEMS() {
      return recentProviderFeatures(features);
   } catch (e) {
     console.error("[Automation] Copernicus Surge failed:", e.message);
-    return [];
+    return null;
   }
 }
 
@@ -397,6 +434,7 @@ async function refreshAutomatedHazards() {
     return;
   }
   const cycleStartedAt = new Date().toISOString();
+  let providerStatus = getHazards().providerStatus || {};
   saveHazardMetadata({
     lastHazardCheckAt: cycleStartedAt,
     lastHazardCheckStartedAt: cycleStartedAt,
@@ -413,48 +451,64 @@ async function refreshAutomatedHazards() {
     let addedCount = 0;
     let updatedCount = 0;
 
+    const mergeProviderFeatures = (providerId, sourceId, features) => {
+      const checkedAt = new Date().toISOString();
+      if (!Array.isArray(features)) {
+        cycleFailed = true;
+        providerStatus[providerId] = {
+          ...(providerStatus[providerId] || {}),
+          status: "error",
+          lastAttemptAt: checkedAt,
+          message: "The provider request failed; previously collected hazards were retained.",
+        };
+        return;
+      }
+      successfulSources.add(sourceId);
+      providerStatus[providerId] = {
+        status: "healthy",
+        lastAttemptAt: checkedAt,
+        lastSuccessAt: checkedAt,
+        itemCount: features.length,
+        message: `${features.length} current item${features.length === 1 ? "" : "s"} received.`,
+      };
+      for (const feature of recentProviderFeatures(features)) {
+        const extId = feature.properties?.extId;
+        if (!extId) continue;
+        seenExtIds.add(extId);
+        const index = hazards.features.findIndex(hazard => hazard.properties?.extId === extId);
+        if (index > -1) {
+          hazards.features[index] = feature;
+          updatedCount += 1;
+        } else {
+          hazards.features.push(feature);
+          addedCount += 1;
+        }
+      }
+    };
+
     // 1.  FETCH SATELLITE DATA FIRST (USGS & NASA)
     console.log("[Automation] Fetching satellite earthquake data...");
-    try {
-      const quakes = recentProviderFeatures(await fetchUSGSEarthquakes());
-      if (quakes && quakes.length > 0) {
-        successfulSources.add("usgs");
-        quakes.forEach(f => {
-          seenExtIds.add(f.properties.extId);
-          const idx = hazards.features.findIndex(h => h.properties && h.properties.extId === f.properties.extId);
-          if (idx > -1) { hazards.features[idx] = f; updatedCount++; }
-          else { hazards.features.push(f); addedCount++; }
-        });
-      }
-    } catch (e) { console.warn("[Automation] USGS fetch failed, keeping old data."); }
+    mergeProviderFeatures("usgs", "usgs", await fetchUSGSEarthquakes());
 
     console.log("[Automation] Fetching satellite thermal data...");
-    try {
-      const fires = recentProviderFeatures(await fetchNASAFires());
-      if (fires && fires.length > 0) {
-        successfulSources.add("nasa");
-        fires.forEach(f => {
-          seenExtIds.add(f.properties.extId);
-          const idx = hazards.features.findIndex(h => h.properties && h.properties.extId === f.properties.extId);
-          if (idx > -1) { hazards.features[idx] = f; updatedCount++; }
-          else { hazards.features.push(f); addedCount++; }
-        });
-      }
-    } catch (e) { console.warn("[Automation] NASA Fires fetch failed, keeping old data."); }
+    if (process.env.FIRMS_MAP_KEY) {
+      mergeProviderFeatures("nasa_firms", "nasa", await fetchNASAFires());
+    } else {
+      providerStatus.nasa_firms = {
+        status: "disabled",
+        lastAttemptAt: new Date().toISOString(),
+        message: "NASA FIRMS is disabled until FIRMS_MAP_KEY is configured.",
+      };
+    }
 
     console.log("[Automation] Fetching NASA Observatory events (EONET)...");
-    try {
-      const eonetEvents = recentProviderFeatures(await fetchNASAEonet());
-      if (eonetEvents && eonetEvents.length > 0) {
-        successfulSources.add("nasa_eonet");
-        eonetEvents.forEach(f => {
-          seenExtIds.add(f.properties.extId);
-          const idx = hazards.features.findIndex(h => h.properties && h.properties.extId === f.properties.extId);
-          if (idx > -1) { hazards.features[idx] = f; updatedCount++; }
-          else { hazards.features.push(f); addedCount++; }
-        });
-      }
-    } catch (e) { console.warn("[Automation] EONET fetch failed, keeping old data."); }
+    mergeProviderFeatures("nasa_eonet", "nasa_eonet", await fetchNASAEonet());
+
+    console.log("[Automation] Fetching RSOE EDIS events...");
+    mergeProviderFeatures("rsoe_edis", "rsoe_edis", await fetchRSOEEDIS());
+
+    console.log("[Automation] Fetching Copernicus EMS activations...");
+    mergeProviderFeatures("copernicus", "copernicus", await fetchCopernicusEMS());
 
     // 2.  FETCH GDACS (EXISTING)
     try {
@@ -462,6 +516,12 @@ async function refreshAutomatedHazards() {
       const resp = await fetchOfficial(gdacsUrl, { headers: { Accept: "application/xml, text/xml" } });
       {
         successfulSources.add("gdacs");
+        providerStatus.gdacs = {
+          status: "healthy",
+          lastAttemptAt: new Date().toISOString(),
+          lastSuccessAt: new Date().toISOString(),
+          message: "The GDACS feed was refreshed successfully.",
+        };
         const xml = await resp.text();
         const $xml = cheerio.load(xml, { xmlMode: true });
         const items = $xml("item").toArray();
@@ -538,13 +598,23 @@ async function refreshAutomatedHazards() {
           }
         }
       }
-    } catch (e) { console.warn("[Automation] GDACS fetch failed, keeping old data."); }
+    } catch (e) {
+      cycleFailed = true;
+      const checkedAt = new Date().toISOString();
+      providerStatus.gdacs = {
+        ...(providerStatus.gdacs || {}),
+        status: "error",
+        lastAttemptAt: checkedAt,
+        message: `GDACS refresh failed: ${e.message}`,
+      };
+      console.warn("[Automation] GDACS fetch failed, keeping old data.");
+    }
 
     const initialCount = hazards.features.length;
     hazards.features = hazards.features.filter(f => {
-      if (!f.properties.extId) return true;
+      if (!f?.properties?.extId) return true;
       const source = f.properties.source;
-      const normalizedSource = source === "nasa" ? (f.properties.notes.includes("Observatory") ? "nasa_eonet" : "nasa") : source;
+      const normalizedSource = source === "nasa" ? (String(f.properties.notes || "").includes("Observatory") ? "nasa_eonet" : "nasa") : source;
       if (successfulSources.has(normalizedSource)) {
          return seenExtIds.has(f.properties.extId);
       }
@@ -555,7 +625,7 @@ async function refreshAutomatedHazards() {
 
     if (addedCount > 0 || updatedCount > 0 || removedCount > 0) {
       saveHazards(hazards);
-      console.log(`[Automation] Satellite & GDACS Sync: ${addedCount} added, ${updatedCount} updated, ${removedCount} removed. Total: ${hazards.features.length}`);
+      console.log(`[Automation] Provider sync: ${addedCount} added, ${updatedCount} updated, ${removedCount} removed. Total: ${hazards.features.length}`);
     }
 
   } catch (err) {
@@ -566,7 +636,8 @@ async function refreshAutomatedHazards() {
     saveHazardMetadata({
       lastHazardCheckAt: cycleEndedAt,
       lastHazardCheckCompletedAt: cycleEndedAt,
-      lastHazardCheckStatus: cycleFailed ? "failed" : "ok"
+      lastHazardCheckStatus: cycleFailed ? "failed" : "ok",
+      providerStatus,
     });
     isRefreshing = false;
     console.log("[Automation] Cycle complete.");
@@ -588,7 +659,6 @@ function scheduleNextHazardRefresh(from = new Date()) {
     await refreshAutomatedHazards();
     scheduleNextHazardRefresh(new Date(Date.now() + 60_000));
   }, delay);
-  timer.unref?.();
 }
 
 scheduleNextHazardRefresh();

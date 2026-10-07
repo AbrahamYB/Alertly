@@ -15,7 +15,6 @@ import { evaluateReportWithAI } from "./lib/report-moderator-ai.js";
 import {
   createRateLimiter,
   createDailyQuotaTracker,
-  isValidCoordinate,
   sanitizeText,
   getSafeExtension,
 } from "./lib/security.js";
@@ -25,7 +24,7 @@ import { createAiUsageTracker } from "./lib/ai-usage.js";
 import { createTaskQueue } from "./lib/task-queue.js";
 import { replaceFileSync } from "./lib/file-utils.js";
 
-import { startAutomation } from "./worker_manager.js";
+import { startAutomation, stopAutomation } from "./worker_manager.js";
 
 try { loadEnvFile(new URL(".env", import.meta.url)); } catch (error) { if (error.code !== "ENOENT") throw error; }
 
@@ -33,7 +32,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", true);
+app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
 app.disable("x-powered-by");
 
 // Enable HTTP compression for HTML, JSON, JS, CSS (skips SSE streams & no-transform)
@@ -251,11 +250,14 @@ function purgeExpiredReports(now = Date.now()) {
 
   const expiredIds = new Set(expired.map((report) => String(report.id)));
   const remaining = reports.filter((report) => !expiredIds.has(String(report.id)));
-  const retainedUploads = new Set(remaining.flatMap((report) => report.images || []).map((image) => path.basename(String(image.url || ""))));
+  const retainedUploads = new Set(remaining.flatMap((report) => report.images || []).map((image) => {
+    const mediaUrl = typeof image === "string" ? image : image?.url;
+    return path.basename(String(mediaUrl || ""));
+  }));
   let removedUploads = 0;
 
   for (const image of expired.flatMap((report) => report.images || [])) {
-    const url = String(image.url || "");
+    const url = String(typeof image === "string" ? image : image?.url || "");
     const isQuarantined = url.startsWith("/api/moderation/media/");
     if (!url.startsWith("/uploads/") && !isQuarantined) continue;
     const filename = path.basename(url);
@@ -288,7 +290,7 @@ function saveHazards(data) {
     publicResponseCache.clear();
   } catch (e) {
     try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch (_) {}
-    console.error("Failed to save hazards:", e);
+    throw e;
   }
 }
 
@@ -333,10 +335,6 @@ function hasAdminAuthorization(req) {
   return Boolean(getStaffIdentity(req)?.user);
 }
 
-function hasModeratorAuthorization(req) {
-  return Boolean(getStaffIdentity(req)?.user);
-}
-
 function requireAdmin(req, res, next) {
   if (hasAdminAuthorization(req)) {
     req.userRole = req.staffUser.role;
@@ -353,8 +351,6 @@ function requireModeratorOrAdmin(req, res, next) {
   }
   return res.status(401).json({ ok: false, error: "Moderator or Admin authorization required." });
 }
-
-const requireLocalAdmin = requireAdmin;
 
 function requireStaff(req, res, next) {
   const identity = getStaffIdentity(req);
@@ -745,26 +741,43 @@ app.get("/api/moderation/media/:filename", requireModeratorOrAdmin, (req, res) =
 
 function quarantineReportMedia(report) {
   report.images = (Array.isArray(report.images) ? report.images : []).map((media) => {
-    if (!String(media.url || "").startsWith("/uploads/")) return media;
-    const filename = path.basename(media.url);
+    const item = typeof media === "string" ? { url: media } : media;
+    if (!String(item?.url || "").startsWith("/uploads/")) return item;
+    const filename = path.basename(item.url);
     const publicPath = path.join(UPLOADS_DIR, filename);
     const privatePath = path.join(QUARANTINE_DIR, filename);
     if (fs.existsSync(publicPath)) replaceFileSync(publicPath, privatePath);
-    return { ...media, url: `/api/moderation/media/${filename}` };
+    return { ...item, url: `/api/moderation/media/${filename}` };
   });
   return report;
 }
 
 function restoreQuarantinedMedia(report) {
   report.images = (Array.isArray(report.images) ? report.images : []).map((media) => {
-    if (!String(media.url || "").startsWith("/api/moderation/media/")) return media;
-    const filename = path.basename(media.url);
+    const item = typeof media === "string" ? { url: media } : media;
+    if (!String(item?.url || "").startsWith("/api/moderation/media/")) return item;
+    const filename = path.basename(item.url);
     const privatePath = path.join(QUARANTINE_DIR, filename);
     const publicPath = path.join(UPLOADS_DIR, filename);
     if (fs.existsSync(privatePath)) replaceFileSync(privatePath, publicPath);
-    return { ...media, url: `/uploads/${filename}` };
+    return { ...item, url: `/uploads/${filename}` };
   });
   return report;
+}
+
+function cleanupFailedReportMedia(files = [], media = []) {
+  const filenames = new Set([
+    ...files.map(file => path.basename(String(file?.filename || file?.path || ""))),
+    ...media.map(item => path.basename(String(typeof item === "string" ? item : item?.url || ""))),
+  ].filter(Boolean));
+  for (const filename of filenames) {
+    for (const directory of [UPLOADS_DIR, QUARANTINE_DIR]) {
+      const target = path.join(directory, filename);
+      try { if (fs.existsSync(target)) fs.unlinkSync(target); } catch (error) {
+        console.warn(`[REPORTS] Could not clean failed upload ${target}: ${error.message}`);
+      }
+    }
+  }
 }
 
 app.patch("/api/moderation/reports/:id", requireModeratorOrAdmin, (req, res) => {
@@ -859,17 +872,23 @@ app.delete("/api/moderation/reports/:id", requireModeratorOrAdmin, (req, res) =>
 });
 
 app.post("/api/reports/publish", publishLimiter, upload.array("images", 5), async (req, res) => {
+  let processedMedia = [];
   try {
     const input = JSON.parse(req.body.reportData || "{}");
     if (input.geometry?.type !== "Polygon") {
+      cleanupFailedReportMedia(req.files || []);
       return res.status(400).json({ success: false, error: "New community reports must use GPS Circle or Area geometry." });
     }
     if (input.text) input.text = sanitizeText(input.text, 4000);
     if (input.type) input.type = sanitizeText(input.type, 100);
+    if (req.query.validate === "true") {
+      cleanupFailedReportMedia(req.files || []);
+      return res.json({ success: true, validated: true, report: normalizeReport(input) });
+    }
     if (req.files?.length) {
       // One bounded queue is shared across every uploader. This prevents a
       // burst of reports from launching unbounded FFmpeg processes.
-      const processedMedia = await Promise.all(
+      processedMedia = await Promise.all(
         req.files.map((file) => mediaQueue.add(async () => {
           const compResult = await autoCompressFile(file.path, { targetSizeMB: 2, maxResolution: 720 });
           const finalFilename = compResult.finalFilename || file.filename;
@@ -885,9 +904,6 @@ app.post("/api/reports/publish", publishLimiter, upload.array("images", 5), asyn
       input.images = processedMedia;
     }
     let report = normalizeReport(input);
-    if (req.query.validate === "true") {
-      return res.json({ success: true, validated: true, report });
-    }
     // Complete the initial safety review before publishing so explicit media
     // cannot briefly appear in the public feed while a background job runs.
     const aiEvaluation = await evaluateReportWithAI(report, { uploadsDir: UPLOADS_DIR, onUsage: (entry) => aiUsage.record(entry) });
@@ -901,6 +917,7 @@ app.post("/api/reports/publish", publishLimiter, upload.array("images", 5), asyn
     saveReports(reports);
     res.status(201).json({ success: true, id: report.id, images: report.images || [], report: sanitizeReportForPublic(report) });
   } catch (error) {
+    cleanupFailedReportMedia(req.files || [], processedMedia);
     res.status(400).json({ success: false, error: error.message });
   }
 });
@@ -915,6 +932,7 @@ app.post("/api/moderation/reports/:id/verify-ai", requireModeratorOrAdmin, async
     const aiEvaluation = await evaluateReportWithAI(target, { uploadsDir: [UPLOADS_DIR, QUARANTINE_DIR], onUsage: (entry) => aiUsage.record(entry) });
     reports[index] = applyReportAiEvaluation(reports[index], aiEvaluation);
     if (aiEvaluation.verdict === "nsfw") quarantineReportMedia(reports[index]);
+    else if (aiEvaluation.verdict === "plausible") restoreQuarantinedMedia(reports[index]);
     reports[index].updatedAt = new Date().toISOString();
     saveReports(reports);
     res.json({ success: true, aiEvaluation, report: reports[index] });
@@ -1223,8 +1241,9 @@ app.delete("/api/admin/hazards/:id", requireAdmin, (req, res) => {
 // Central error handling middleware - prevents leaking internal stack traces
 app.use((err, req, res, _next) => {
   if (err instanceof multer.MulterError) {
+    cleanupFailedReportMedia(req.files || []);
     if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({ success: false, error: "File too large. Maximum upload size is 25MB." });
+      return res.status(400).json({ success: false, error: "File too large. Maximum upload size is 50MB." });
     }
     return res.status(400).json({ success: false, error: `Upload error: ${err.message}` });
   }
@@ -1238,7 +1257,7 @@ app.use((err, req, res, _next) => {
 
 const PORT = Number(process.env.PORT || 3000);
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   purgeExpiredReports();
   purgeExpiredAutomatedHazards();
   console.log(`[SERVER] Alertly running at http://localhost:${PORT}`);
@@ -1253,3 +1272,19 @@ app.listen(PORT, "0.0.0.0", () => {
 
 setInterval(() => purgeExpiredReports(), 60 * 60 * 1000).unref();
 setInterval(() => purgeExpiredAutomatedHazards(), 60 * 60 * 1000).unref();
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[SERVER] ${signal} received; stopping cleanly...`);
+  stopAutomation();
+  server.close((error) => {
+    if (error) console.error("[SERVER] Shutdown error:", error.message);
+    process.exit(error ? 1 : 0);
+  });
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));

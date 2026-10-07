@@ -2,13 +2,17 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { performBackup } from "./backup.js";
+import { replaceFileSync } from "../lib/file-utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
-const DATA_DIR = path.join(ROOT_DIR, "data");
+const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT_DIR, "data"));
 const REPORTS_FILE = path.join(DATA_DIR, "reports.json");
-const HAZARDS_FILE = path.join(ROOT_DIR, "hazards.geojson");
+const HAZARDS_FILE = path.resolve(process.env.HAZARDS_FILE || path.join(ROOT_DIR, "hazards.geojson"));
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
 
 console.log("[SEED] 1. Creating backup of current database state...");
 performBackup();
@@ -27,6 +31,7 @@ const DEMO_REPORTS = [
     status: "active",
     moderationStatus: "approved",
     verified: true,
+    publiclyVisible: true,
     isRemoved: false,
     createdAt: Date.now() - 15 * 60 * 1000,
     detectedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
@@ -50,12 +55,6 @@ const DEMO_REPORTS = [
       analyzedAt: new Date(Date.now() - 14 * 60 * 1000).toISOString(),
       model: "groq/compound-mini"
     },
-    aiModeration: {
-      confidence: 94,
-      assessment: "plausible",
-      reasons: ["Topographic elevation correlates with known fuel zone", "No conflicting reports in immediate radius"],
-      advisoryOnly: true
-    },
     auditLog: [
       { id: "audit_1", action: "submitted", note: "Citizen mobile submission", at: new Date(Date.now() - 15 * 60 * 1000).toISOString(), actor: "Citizen" },
       { id: "audit_2", action: "approved", note: "Verified through local fire service broadcast", at: new Date(Date.now() - 10 * 60 * 1000).toISOString(), actor: "Moderator" }
@@ -71,6 +70,7 @@ const DEMO_REPORTS = [
     status: "active",
     moderationStatus: "approved",
     verified: true,
+    publiclyVisible: true,
     isRemoved: false,
     createdAt: Date.now() - 45 * 60 * 1000,
     detectedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
@@ -94,12 +94,6 @@ const DEMO_REPORTS = [
       analyzedAt: new Date(Date.now() - 44 * 60 * 1000).toISOString(),
       model: "groq/compound-mini"
     },
-    aiModeration: {
-      confidence: 88,
-      assessment: "plausible",
-      reasons: ["Hydrological risk zone confirmed"],
-      advisoryOnly: true
-    },
     auditLog: [
       { id: "audit_3", action: "submitted", note: "Field report", at: new Date(Date.now() - 45 * 60 * 1000).toISOString(), actor: "Citizen" },
       { id: "audit_4", action: "approved", note: "Municipal advisory matches report", at: new Date(Date.now() - 35 * 60 * 1000).toISOString(), actor: "Moderator" }
@@ -115,6 +109,7 @@ const DEMO_REPORTS = [
     status: "active",
     moderationStatus: "pending",
     verified: false,
+    publiclyVisible: false,
     isRemoved: false,
     createdAt: Date.now() - 5 * 60 * 1000,
     detectedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
@@ -131,18 +126,12 @@ const DEMO_REPORTS = [
     },
     images: [],
     aiEvaluation: {
-      verdict: "plausible",
-      confidence: 82,
-      reason: "CA-5 highway cut through mountainous corridor known for rockfall during saturated ground conditions.",
+      verdict: "unverified",
+      confidence: 0,
+      reason: "Awaiting automated or moderator verification.",
       visualEvidence: null,
       analyzedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
       model: "groq/compound-mini"
-    },
-    aiModeration: {
-      confidence: 82,
-      assessment: "plausible",
-      reasons: ["Highway corridor verified"],
-      advisoryOnly: true
     },
     auditLog: [
       { id: "audit_5", action: "submitted", note: "Public submission via mobile", at: new Date(Date.now() - 5 * 60 * 1000).toISOString(), actor: "Citizen" }
@@ -224,13 +213,13 @@ const DEMO_HAZARDS = {
 };
 
 // Write clean seed data atomically
-const tempReports = `${REPORTS_FILE}.tmp`;
+const tempReports = `${REPORTS_FILE}.${process.pid}.tmp`;
 fs.writeFileSync(tempReports, JSON.stringify(DEMO_REPORTS, null, 2) + "\n");
-fs.renameSync(tempReports, REPORTS_FILE);
+replaceFileSync(tempReports, REPORTS_FILE);
 
-const tempHazards = `${HAZARDS_FILE}.tmp`;
+const tempHazards = `${HAZARDS_FILE}.${process.pid}.tmp`;
 fs.writeFileSync(tempHazards, JSON.stringify(DEMO_HAZARDS, null, 2) + "\n");
-fs.renameSync(tempHazards, HAZARDS_FILE);
+replaceFileSync(tempHazards, HAZARDS_FILE);
 
 console.log(`[SEED] Successfully seeded database:`);
 console.log(`[SEED] - 3 clean community reports (2 approved, 1 pending review in moderation)`);

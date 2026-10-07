@@ -1,35 +1,43 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { replaceFileSync } from "../lib/file-utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
-const DATA_DIR = path.join(ROOT_DIR, "data");
-const REPORTS_FILE = path.join(DATA_DIR, "reports.json");
-const HAZARDS_FILE = path.join(ROOT_DIR, "hazards.geojson");
-const BACKUP_DIR = path.join(ROOT_DIR, "backups");
-
-fs.mkdirSync(BACKUP_DIR, { recursive: true });
-
-function readJsonSafe(filepath, defaultValue) {
-  try {
-    if (fs.existsSync(filepath)) {
-      return JSON.parse(fs.readFileSync(filepath, "utf8"));
-    }
-  } catch (err) {
-    console.warn(`[BACKUP] Warning reading ${filepath}: ${err.message}`);
-  }
-  return defaultValue;
+function resolvePaths(options = {}) {
+  const dataDir = path.resolve(options.dataDir || process.env.DATA_DIR || path.join(ROOT_DIR, "data"));
+  return {
+    dataDir,
+    reportsFile: path.resolve(options.reportsFile || path.join(dataDir, "reports.json")),
+    hazardsFile: path.resolve(options.hazardsFile || process.env.HAZARDS_FILE || path.join(ROOT_DIR, "hazards.geojson")),
+    backupDir: path.resolve(options.backupDir || process.env.BACKUPS_DIR || path.join(ROOT_DIR, "backups")),
+  };
 }
 
-export function performBackup() {
-  const reports = readJsonSafe(REPORTS_FILE, []);
-  const hazards = readJsonSafe(HAZARDS_FILE, { type: "FeatureCollection", features: [] });
+function readJson(filepath, defaultValue) {
+  if (!fs.existsSync(filepath)) return defaultValue;
+  try {
+    return JSON.parse(fs.readFileSync(filepath, "utf8"));
+  } catch (error) {
+    throw new Error(`Cannot back up invalid JSON in ${filepath}: ${error.message}`);
+  }
+}
+
+export function performBackup(options = {}) {
+  const { reportsFile, hazardsFile, backupDir } = resolvePaths(options);
+  fs.mkdirSync(backupDir, { recursive: true });
+  const reports = readJson(reportsFile, []);
+  const hazards = readJson(hazardsFile, { type: "FeatureCollection", features: [] });
+  if (!Array.isArray(reports)) throw new Error("Cannot back up reports: expected a JSON array.");
+  if (hazards?.type !== "FeatureCollection" || !Array.isArray(hazards.features)) {
+    throw new Error("Cannot back up hazards: expected a GeoJSON FeatureCollection.");
+  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `backup_${timestamp}.json`;
-  const targetPath = path.join(BACKUP_DIR, filename);
+  const targetPath = path.join(backupDir, filename);
 
   const payload = {
     version: 1,
@@ -42,7 +50,9 @@ export function performBackup() {
     hazards,
   };
 
-  fs.writeFileSync(targetPath, JSON.stringify(payload, null, 2));
+  const tempPath = `${targetPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2) + "\n");
+  replaceFileSync(tempPath, targetPath);
   console.log(`[BACKUP] Backup created successfully: ${filename}`);
   console.log(`[BACKUP] Reports: ${payload.stats.reportsCount} | Hazards: ${payload.stats.hazardsCount}`);
   return targetPath;

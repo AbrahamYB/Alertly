@@ -66,6 +66,7 @@ test("public report visibility follows one moderation rule", () => {
   assert.equal(plausible.verified, true);
   assert.equal(isReportPublic(applyReportAiEvaluation(base, { verdict: "suspicious", confidence: 70, reason: "Conflicting evidence." })), false);
   assert.equal(isReportPublic({ ...base, moderationStatus: "approved", verified: true }), true);
+  assert.equal(isReportPublic({ ...base, moderationStatus: "approved", verified: true, publiclyVisible: false }), true, "approved status wins over stale visibility data");
   assert.equal(isReportPublic({ ...base, moderationStatus: "rejected", publiclyVisible: true }), false);
   assert.equal(isReportPublic({ ...base, isRemoved: true, publiclyVisible: true }), false);
 });
@@ -144,5 +145,18 @@ test("sanitizeReportForPublic removes audit logs, internal notes, and removal re
   assert.equal(clean.id, "rep_sensitive_test");
   assert.equal(clean.text, "Public fire description");
   assert.equal(clean.hasRemovalRequest, true);
+});
+
+test("sanitizeReportForPublic preserves legacy string attachment URLs", () => {
+  const clean = sanitizeReportForPublic({
+    id: "legacy-media",
+    type: "Flood",
+    text: "Legacy upload",
+    lat: 15,
+    lng: -88,
+    moderationStatus: "approved",
+    images: ["/uploads/legacy.jpg"],
+  });
+  assert.deepEqual(clean.images, [{ url: "/uploads/legacy.jpg", name: "Attachment", type: "image", size: undefined }]);
 });
 

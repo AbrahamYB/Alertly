@@ -19,7 +19,7 @@ Area vertices are continuously ordered around the area center, so new and moved 
 
 Background provider refresh is disabled by default so startup is fast and works offline. Copy `.env.example` to `.env` or set environment variables in your shell to opt into integrations. Never commit real keys.
 
-Existing hazard and report files are read compatibly and normalized at the API boundary. New records support point, line, polygon, severity, status, confidence, source attribution, timestamps, and transparent advisory-only AI moderation fields.
+Existing hazard and report files are read compatibly and normalized at the API boundary. New records support point, line, polygon, severity, status, confidence, source attribution, and timestamps. Community reports pass through one moderation state model: plausible or staff-approved reports are public, uncertain reports remain in moderation, and NSFW media is quarantined for staff review.
 
 ## Configurable AI
 

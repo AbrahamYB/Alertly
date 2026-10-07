@@ -11,8 +11,7 @@
 - **Do not break working features**: Preserve script/style boundaries and responsive layouts.
 - **Keep changes focused & clean**: Write standard, human-readable, idiomatic code without artificial minification or decorative emoji clutter.
 - **Security & Authorization**:
-  - Admin endpoints (`/api/admin/*`, `/hazard-admin`, `/hazards/publish`) guarded by `requireAdmin` (validates `ADMIN_API_KEY` via Bearer token, `X-Admin-Key` header, or `alertly_admin_key` cookie, with safe localhost dev fallback when unset).
-  - Moderation endpoints (`/api/moderation/*`) guarded by `requireModeratorOrAdmin` (validates `ADMIN_API_KEY` or `MODERATOR_KEY`).
+  - Admin and moderation endpoints are guarded by the invite-only staff session system. Owner-only account and ownership actions use `requireOwner`; signed-in owner/staff accounts can operate hazards and moderation.
 - **Core Documentation Rules**:
   - `CODEBASE_MAP.md` is strictly for MCP (`jCodeMunch`) indexing and symbol tracking. **NEVER DELETE IT** — only update its tables and symbols when making code changes.
   - `HANDOFF.md` is the primary shared communication channel between the developer, AI, and Codex. Keep current state, tasks, and requirements updated here.
@@ -25,9 +24,9 @@
 ## 2. CURRENT SYSTEM STATE
 
 - **Application Health**: Fully operational and hardened. All routes, feeds, community moderation, hazard admin, chatbox AI, vision verification, rate limiting, and removal resolution are active.
-- **Test Suite**: 52 automated checks passing through `npm test` (44 unit/static tests, 7 isolated API tests, and the staff/ownership HTTP smoke test).
+- **Test Suite**: 61 automated checks passing through `npm test` (52 unit/static tests, 8 isolated API tests, and the staff/ownership HTTP smoke test).
 - **Database & Persistence**:
-  - Zero-dependency file persistence (`data/reports.json` and `hazards.geojson`) with atomic temporary writes (`.tmp` + `fs.renameSync`).
+  - Zero-dependency file persistence (`data/reports.json` and `hazards.geojson`) with atomic cross-platform file replacement. Backup, restore, and demo seed commands honor deployment storage paths.
   - Automated database backup: `npm run backup` (creates timestamped snapshot in `backups/`).
   - Automated database restore: `npm run restore [file]` (safely restores from backup).
   - One-command clean demo seeding: `npm run seed:demo` (backs up current data and seeds pristine, believable demo datasets).
@@ -42,7 +41,7 @@
   - File uploads: whitelisted extensions (JPG, PNG, WebP, GIF, MP4, WebM, MOV), 50MB incoming cap, UUID filenames, and automatic media compression.
 - **AI Integration**:
   - **Chatbox AI** (`lib/ai.js`): JSON responses for broad browser compatibility, legacy SSE support, a 15-turn recent context window (30 messages max), bounded provider requests, and web-search fallback.
-  - **Community Report Verification** (`lib/report-moderator-ai.js`): Groq Vision (`llama-3.2-11b-vision-preview`), inspects report text and attached media for authenticity and plausibility without auto-deleting.
+  - **Community Report Verification** (`lib/report-moderator-ai.js`): separate text and vision models inspect report details and media. Plausible reports become public, uncertain reports remain staff-only, and NSFW media is quarantined immediately for staff review rather than permanently deleted.
 - **Removal Request Workflow**: Full community removal request submission (`POST /api/removal`) and interactive moderator resolution (`POST /api/moderation/reports/:id/removal-requests/:reqId/resolve` with Accept / Dismiss actions).
 
 ---
@@ -53,7 +52,7 @@
 stream/
 ├── server.js                     ← Express app, all routes, session state, auto-purge jobs
 ├── automation.js                 ← Feed fetchers (runs as forked child process, auto-restarts)
-├── worker_manager.js             ← Automation process supervisor & IPC bridge
+├── worker_manager.js             ← Automation process supervisor
 ├── package.json
 │
 ├── lib/
@@ -86,6 +85,8 @@ stream/
 │   ├── report-moderator-ai.test.js ← Report moderator AI and vision verification tests
 │   ├── media-compressor.test.js  ← FFmpeg compression and contact-sheet tests
 │   ├── staff-access.test.js      ← Staff invitations and ownership transfer tests
+│   ├── backup-restore.test.js    ← Deployment-path backup and restore safety tests
+│   ├── provider-status.test.js   ← Provider inventory and staleness tests
 │   └── api.test.js               ← Isolated end-to-end HTTP lifecycle tests
 │
 ├── CODEBASE_MAP.md               ← Codebase map for jCodeMunch indexing
@@ -102,7 +103,7 @@ stream/
 | GET | `/` | — | Serves `index.html` (public map) |
 | GET | `/report` | — | Serves `report.html` (submission wizard) |
 | GET | `/moderation` | — | Serves `moderation.html` (moderator console) |
-| GET | `/hazard-admin` | `requireLocalAdmin` | Serves `hazard-admin.html` (localhost-only admin) |
+| GET | `/hazard-admin` | `requireAdmin` | Serves the authenticated hazard administration page |
 | GET | `/uploads/*` | — | Static uploaded report attachments (dotfiles denied) |
 
 ### Health & Automation Status
@@ -132,11 +133,11 @@ stream/
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
 | GET | `/hazards/data` | — | Public hazard GeoJSON (viewport-scoped, grouped) |
-| GET | `/api/admin/hazards` | `requireLocalAdmin` | Full admin hazard dataset |
-| POST | `/hazards/publish` | `requireLocalAdmin` | Create official hazard |
-| PATCH | `/api/admin/hazards/:id` | `requireLocalAdmin` | Update existing hazard |
-| POST | `/api/admin/hazards/:id/merge` | `requireLocalAdmin` | Merge two hazard records |
-| DELETE | `/api/admin/hazards/:id` | `requireLocalAdmin` | Delete hazard record |
+| GET | `/api/admin/hazards` | `requireAdmin` | Full admin hazard dataset |
+| POST | `/hazards/publish` | `requireAdmin` | Create official hazard |
+| PATCH | `/api/admin/hazards/:id` | `requireAdmin` | Update existing hazard |
+| POST | `/api/admin/hazards/:id/merge` | `requireAdmin` | Merge two hazard records |
+| DELETE | `/api/admin/hazards/:id` | `requireAdmin` | Delete hazard record |
 
 ---
 
@@ -147,19 +148,25 @@ All subsystems are isolated and fall back safely to base settings if granular ke
 | Variable | Fallback | Default | Description |
 |----------|----------|---------|-------------|
 | `PORT` | — | `3000` | HTTP server listening port |
+| `TRUST_PROXY` | — | `loopback` | Express trusted proxy scope; keep narrow unless deployment topology requires otherwise |
 | `ENABLE_AUTOMATION` | — | `false` | Fork and run feed automation worker |
 | `HAZARD_BBOX` | — | Central America | `minLon,minLat,maxLon,maxLat` bounding box filter |
+| `HAZARD_REFRESH_TIMES` | — | `00:00,12:00` | Fixed daily provider refresh times |
+| `HAZARD_REFRESH_TIMEZONE` | — | `America/Guatemala` | Time zone used for fixed refresh times |
+| `PROVIDER_STALE_HOURS` | — | `13` | Delay threshold for provider-health reporting |
+| `DATA_DIR` / `HAZARDS_FILE` / `BACKUPS_DIR` | project paths | — | Deployment-specific persistent storage locations |
 | **Chatbox AI** | | | |
 | `CHAT_AI_API_KEY` | `AI_API_KEY` / `GROQ_API_KEY` | — | API key for public chat assistant |
 | `CHAT_AI_PROVIDER` | `AI_PROVIDER` | `groq` | `groq` or OpenAI-compatible provider |
 | `CHAT_AI_BASE_URL` | `AI_BASE_URL` | Groq URL | Custom endpoint base URL |
-| `CHAT_AI_MODEL` | `AI_MODEL` | `groq/compound-mini` | Chat LLM model |
+| `CHAT_AI_MODEL` | `AI_MODEL` | `openai/gpt-oss-20b` | Chat LLM model |
 | `CHAT_AI_WEB_SEARCH` | `AI_WEB_SEARCH` | `true` | Enable web search tool for chat |
 | **Report Moderator AI** | | | |
 | `REPORT_AI_API_KEY` | `AI_API_KEY` / `GROQ_API_KEY` | — | API key for report verification & vision |
 | `REPORT_AI_PROVIDER` | `AI_PROVIDER` | `groq` | `groq` or OpenAI-compatible provider |
 | `REPORT_AI_BASE_URL` | `AI_BASE_URL` | Groq URL | Custom endpoint base URL |
-| `REPORT_AI_MODEL` | `AI_VISION_MODEL` | `llama-3.2-11b-vision-preview` | Vision-capable verification model |
+| `REPORT_AI_VISION_MODEL` | `VISION_AI_MODEL` | `qwen/qwen3.8-27b` | Vision-capable verification model |
+| `REPORT_AI_TEXT_MODEL` | `AI_MODEL` | `openai/gpt-oss-20b` | Text-only report verification model |
 | **External Feeds** | | | |
 | `FIRMS_MAP_KEY` | — | — | NASA FIRMS MAP_KEY for VIIRS fire hotspots |
 
@@ -175,29 +182,27 @@ All subsystems are isolated and fall back safely to base settings if granular ke
     "type": "Polygon",
     "coordinates": [[[-89.2, 13.7], [-89.1, 13.7], [-89.1, 13.8], [-89.2, 13.7]]]
   },
-  "properties": {
-    "hazard": "fire|flood|volcano|landslide|earthquake|other",
-    "description": "Observed brush fire near road",
-    "severity": "low|medium|high|critical",
-    "moderationStatus": "pending|approved|rejected",
-    "status": "active|monitoring|resolved",
-    "createdAt": "2026-09-05T12:00:00.000Z",
-    "updatedAt": "2026-09-05T12:00:00.000Z",
-    "images": ["rep_1740000000000_img1.jpg"],
-    "aiEvaluation": {
-      "evaluatedAt": "2026-09-05T12:00:05.000Z",
-      "flag": "plausible|suspicious|unverified|likely_false",
-      "confidence": "high|medium|low",
-      "summary": "Report text and attached imagery show consistent smoke plume characteristics.",
-      "imageFindings": ["Image 1 confirms outdoor smoke consistent with brush fire."],
-      "model": "llama-3.2-11b-vision-preview"
-    },
-    "auditLog": [
-      { "action": "submitted", "at": "2026-09-05T12:00:00.000Z", "note": "Public submission" }
-    ],
-    "mergedInto": null,
-    "removalRequested": false
-  }
+  "type": "Fire",
+  "text": "Observed brush fire near road",
+  "severity": "high",
+  "moderationStatus": "approved",
+  "status": "active",
+  "createdAt": 1791201600000,
+  "updatedAt": "2026-10-05T12:00:00.000Z",
+  "images": [{ "url": "/uploads/file.jpg", "type": "image" }],
+  "publiclyVisible": true,
+  "verified": true,
+  "aiEvaluation": {
+    "analyzedAt": "2026-10-05T12:00:05.000Z",
+    "verdict": "plausible",
+    "confidence": 92,
+    "reason": "Report details and attached imagery are consistent.",
+    "visualEvidence": "Visible evidence summary.",
+    "model": "provider/model-name"
+  },
+  "auditLog": [
+    { "action": "submitted", "at": "2026-10-05T12:00:00.000Z", "note": "Public submission" }
+  ]
 }
 ```
 
@@ -273,7 +278,7 @@ Run the full automated test suite. The runner starts isolated temporary servers 
 npm test
 ```
 
-### Test Coverage (52 Passing Checks)
+### Test Coverage (61 Passing Checks)
 - `test/ai.test.js`: Chatbot 413 history truncation, retry behavior, and search opt-out.
 - `test/ai-usage.test.js`: Privacy-safe aggregate usage tracking.
 - `test/domain.test.js`: GeoJSON normalization, report defaults, and Haversine point clustering.
@@ -282,6 +287,10 @@ npm test
 - `test/api.test.js`: End-to-end integration tests for health check, auth status, chat quota, report publishing, removal request submission, removal resolution (accept/dismiss), and deletion.
 - `test/media-compressor.test.js`: FFmpeg discovery, 720p compression, size limiting, format conversion, and contact sheets.
 - `test/frontend-static.test.js`: No-window syntax validation for every inline application script and moderation workflow wiring checks.
+- `test/automation-static.test.js`: Ensures every documented external hazard provider remains connected to the refresh cycle.
+- `test/provider-status.test.js`: Provider inventory, credential-aware states, and schedule-compatible staleness checks.
+- `test/backup-restore.test.js`: Atomic backup/restore behavior, deployment storage paths, and invalid-backup rejection.
+- `test/server-static.test.js`: Protected media quarantine/restore re-check wiring.
 - `test/staff-access.test.js` and `test/staff-http-smoke.js`: Invite-only access and two-party ownership transfer.
 - `test/postgres-job-queue.test.js` and `test/task-queue.test.js`: Queue estimates and concurrency enforcement.
 
@@ -290,12 +299,12 @@ npm test
 ## 10. RECENT CHANGE LOG
 
 - **Latest — Unified Public/Moderation Visibility & Fixed Hazard Schedule**: Community reports now use one server-side visibility decision everywhere. AI-plausible or moderator-approved reports are public; unverified, suspicious, likely-false, rejected, and removed reports stay moderation-only. Approved community reports are merged into the main map hazard feed, already-open report maps replace stale markers after moderator edits, and public query parameters cannot reveal hidden reports. Automated hazard refreshes now run at fixed `00:00` and `12:00` times in `America/Guatemala` instead of drifting twelve hours from process startup.
-- **Latest — Headless Moderation Hardening**: Report/hazard writes invalidate server caches immediately; quarantined media remains available to authenticated AI re-checks; quarantine/restore moves use cross-platform safe replacement; invalid severities are rejected; legacy string attachments can be deleted; and an AI-withheld submission is no longer falsely shown as live in the submitter's browser.
+- **Latest — Full Reliability Audit**: Connected RSOE EDIS and Copernicus to the real refresh cycle; made provider failure/empty-result handling safe; aligned provider staleness with the twice-daily schedule; corrected upload cleanup and the 50MB error; made backup/restore/seed deployment-path aware and atomic; removed dead aliases, IPC, and legacy seed fields; added clean worker shutdown/restart behavior; restored quarantined media after a plausible staff re-check; narrowed proxy trust; and expanded coverage to 61 passing checks.
 
 1. **Map Cleanup & Marker Polish**: Removed manual mapping and blue circle marker artifacts from `hazard-admin.html`. Segregated community reporting from official administrative inspection.
 2. **Codebase Hygiene**: Pruned dead `node-fetch` dependency (migrated to Node native `fetch`), deleted duplicate server files, and eliminated artificial emoji comments.
 3. **Subsystem API Isolation**: Structured independent configuration namespaces for Chatbot AI (`CHAT_AI_*`), Report Moderator AI (`REPORT_AI_*`), and Feeds (`FIRMS_*`).
-4. **AI Vision Verification**: Implemented `lib/report-moderator-ai.js` using Groq Vision (`llama-3.2-11b-vision-preview`) to verify community reports and image authenticity without automated deletion.
+4. **AI Vision Verification**: Implemented `lib/report-moderator-ai.js` with separately configurable text and vision models to verify community reports while quarantining explicit media for staff review.
 5. **Moderation UI Integration**: Added AI credibility badges, reasoning breakdown, image viewer modal, and on-demand verification re-check to `moderation.html`.
 6. **Security Hardening**: Removed invasive Discord visitor tracking webhook and middleware.
 7. **Documentation Consolidation**: Consolidated `CHANGES_SUMMARY.md` into `HANDOFF.md` and preserved `CODEBASE_MAP.md` for jCodeMunch MCP.
@@ -311,14 +320,14 @@ npm test
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.
     - Verified permanent erasure on deletion (`DELETE /api/moderation/reports/:id`) removing records from `data/reports.json` and unlinking attachments from `uploads/`.
 11. **Alertly Antigravity Checklist Execution (Phases 1–10 Complete)**:
-    - **Security & Route Protection**: Replaced localhost-only restriction with `requireAdmin` and `requireModeratorOrAdmin`. Supports `ADMIN_API_KEY` and `MODERATOR_KEY` via Bearer token, `X-Admin-Key` header, or `alertly_admin_key` cookie, with localhost fallback during local development. Added auth status, login, and logout endpoints.
+    - **Security & Route Protection**: Replaced shared keys with invite-only owner/staff accounts, password hashing, HTTP-only sessions, limited owner bootstrap, invitations, role-aware guards, and two-party ownership transfer.
     - **Removal Request Resolution**: Implemented `POST /api/moderation/reports/:id/removal-requests/:reqId/resolve` and interactive UI buttons in `moderation.html` allowing moderators to Accept (marks report rejected) or Dismiss removal requests with audit log tracking.
     - **Sliding-Window Rate Limiting & 15-Prompt Daily Quota**: Added sliding-window rate limiters on publishing, removal requests, and chat. Implemented `createDailyQuotaTracker(15)` enforcing a 15-prompt daily user limit (resets 00:00 UTC) with live badge in `index.html`.
     - **AI Chat Context**: Keeps the latest 15 user requests and assistant replies, with proportional shortening only for unusually large histories so every recent turn remains represented.
     - **Database Safety & Atomic Writes**: Wrapped `saveReports` and `saveHazards` in atomic temp-file write + rename operations to prevent file corruption.
     - **Database Backup & Restore**: Added `npm run backup` and `npm run restore` with timestamped JSON snapshots in `backups/`.
-    - **Upload Hardening**: Added 25MB cap, UUID-based random filenames, and whitelisted extensions supporting JPG, PNG, WebP, GIF, MP4, and WebM.
-    - **Automated Verification**: Expanded test suite to 25 automated tests covering unit and integration testing.
+    - **Upload Hardening**: Added a 50MB-per-file incoming cap, UUID-based random filenames, strict media-extension checks, failed-upload cleanup, and automatic compression to the bounded stored format.
+    - **Automated Verification**: Expanded the suite across unit, static, integration, media, storage, staff, queue, and moderation workflows.
 
 ---
 
@@ -346,22 +355,23 @@ Create `/var/www/alertly/stream/.env`:
 ```env
 PORT=3000
 NODE_ENV=production
-ADMIN_API_KEY=your-secure-random-admin-key-here
-MODERATOR_KEY=your-secure-random-mod-key-here
+TRUST_PROXY=loopback
 
 CHAT_AI_PROVIDER=groq
 CHAT_AI_BASE_URL=https://api.groq.com/openai/v1
-CHAT_AI_MODEL=groq/compound-mini
+CHAT_AI_MODEL=openai/gpt-oss-20b
 CHAT_AI_API_KEY=your-groq-api-key
 
 REPORT_AI_PROVIDER=groq
 REPORT_AI_BASE_URL=https://api.groq.com/openai/v1
-REPORT_AI_VISION_MODEL=llama-3.2-11b-vision-preview
-REPORT_AI_TEXT_MODEL=groq/compound-mini
+REPORT_AI_VISION_MODEL=qwen/qwen3.8-27b
+REPORT_AI_TEXT_MODEL=openai/gpt-oss-20b
 REPORT_AI_API_KEY=your-groq-api-key
 
-ENABLE_AUTOMATION=false
+ENABLE_AUTOMATION=true
 HAZARD_BBOX=-180,-60,180,85
+HAZARD_REFRESH_TIMES=00:00,12:00
+HAZARD_REFRESH_TIMEZONE=America/Guatemala
 ```
 
 ### 3. Process Management (PM2)
@@ -419,16 +429,10 @@ CHAT_AI_MODEL=anthropic/claude-3.5-haiku
 CHAT_AI_API_KEY=sk-or-...
 ```
 
-### Estimated Running Costs
-- **Chat Assistant (`groq/compound-mini` / `llama-3.1-8b-instant`)**:
-  - Context size: 4 turns (average 1,200 tokens prompt + 250 tokens completion per query).
-  - Cost on Groq: ~$0.05 per 1,000 queries.
-  - With the 15-prompt daily limit per user, a user chatting maximum capacity consumes < 22,000 tokens/day (~$0.001/day).
-  - Even with 10,000 active daily users, monthly chat costs remain under $30.
-- **Report Verification (`llama-3.2-11b-vision-preview`)**:
-  - Vision calls are only triggered on new report submissions or manual moderator request.
-  - Cost: ~$0.15 per 1,000 evaluations.
-  - Negligible operational footprint.
+### Cost Planning
+- Chat keeps at most 15 recent user/assistant turns and bounds unusually large histories before provider submission.
+- Report verification uses the text model when no visual media is present and the vision model only when needed; video evidence is summarized into contact sheets.
+- Provider prices and free-tier limits change. Calculate deployment cost from the privacy-safe usage totals in the staff console and the provider's current official pricing instead of relying on hard-coded estimates.
 
 ---
 
@@ -492,7 +496,7 @@ Inspired by `vladaad/discordcompressor` (Go + FFmpeg utility for target-size vid
    - Accepts **all major video formats** (`.mp4`, `.webm`, `.mov`, `.mkv`, `.avi`, `.flv`, `.wmv`, `.3gp`, `.ts`, `.ogv`, `.m4v`, `.mpg`).
    - Automatically transcodes any video format into standard **H.264/AAC MP4** with progressive streaming (`+faststart`), renames the final asset to `.mp4`, removes the raw upload, and updates database references so every browser, iPhone, Android, and PC can stream the video natively.
    - Moderation dashboard (`moderation.html`) updated with interactive video players and `▶ VIDEO` badges.
-   - Fully covered by `test/media-compressor.test.js`; the full project currently passes 52 automated checks.
+   - Fully covered by `test/media-compressor.test.js`; the full project currently passes 61 automated checks.
 
 12. **Canonical Repository & Cross-Platform Repair (2026-10-07)**:
    - Restored the complete Alertly source, installer foundation, tests, and deployment files to the private Git repository.
