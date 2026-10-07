@@ -58,6 +58,11 @@ test("GET /api/chat/quota returns daily quota tracking state", async () => {
   assert.equal(data.limit, 15);
 });
 
+test("Moderation data is unavailable without staff authentication", async () => {
+  const res = await fetch(`${BASE_URL}/api/moderation/reports`);
+  assert.notEqual(res.status, 200);
+});
+
 test("Full Community Report lifecycle: publish, removal request, resolution, delete", async () => {
   // 1. Publish a community report
   const reportPayload = {
@@ -111,6 +116,13 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(foundReport.removalRequests.length, 1);
   const reqId = foundReport.removalRequests[0].id;
   assert.equal(foundReport.removalRequests[0].status, "pending");
+
+  const invalidSeverityRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: staffCookie },
+    body: JSON.stringify({ severity: "catastrophic" })
+  });
+  assert.equal(invalidSeverityRes.status, 400);
 
   // Rejected reports disappear from the public map immediately, and restoring
   // them makes them public again without stale cache state.

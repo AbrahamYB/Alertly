@@ -25,7 +25,7 @@
 ## 2. CURRENT SYSTEM STATE
 
 - **Application Health**: Fully operational and hardened. All routes, feeds, community moderation, hazard admin, chatbox AI, vision verification, rate limiting, and removal resolution are active.
-- **Test Suite**: 43 automated checks passing through `npm test` (36 unit tests, 6 isolated API tests, and the staff/ownership HTTP smoke test).
+- **Test Suite**: 47 automated checks passing through `npm test` (39 unit/static tests, 7 isolated API tests, and the staff/ownership HTTP smoke test).
 - **Database & Persistence**:
   - Zero-dependency file persistence (`data/reports.json` and `hazards.geojson`) with atomic temporary writes (`.tmp` + `fs.renameSync`).
   - Automated database backup: `npm run backup` (creates timestamped snapshot in `backups/`).
@@ -273,7 +273,7 @@ Run the full automated test suite. The runner starts isolated temporary servers 
 npm test
 ```
 
-### Test Coverage (43 Passing Checks)
+### Test Coverage (47 Passing Checks)
 - `test/ai.test.js`: Chatbot 413 history truncation, retry behavior, and search opt-out.
 - `test/ai-usage.test.js`: Privacy-safe aggregate usage tracking.
 - `test/domain.test.js`: GeoJSON normalization, report defaults, and Haversine point clustering.
@@ -281,6 +281,7 @@ npm test
 - `test/security.test.js`: Rate limiting, daily quota tracking (15 prompts/day limit), geographic coordinate bounds, upload extension sanitization, and administrative key validation.
 - `test/api.test.js`: End-to-end integration tests for health check, auth status, chat quota, report publishing, removal request submission, removal resolution (accept/dismiss), and deletion.
 - `test/media-compressor.test.js`: FFmpeg discovery, 720p compression, size limiting, format conversion, and contact sheets.
+- `test/frontend-static.test.js`: No-window syntax validation for every inline application script and moderation workflow wiring checks.
 - `test/staff-access.test.js` and `test/staff-http-smoke.js`: Invite-only access and two-party ownership transfer.
 - `test/postgres-job-queue.test.js` and `test/task-queue.test.js`: Queue estimates and concurrency enforcement.
 
@@ -288,7 +289,7 @@ npm test
 
 ## 10. RECENT CHANGE LOG
 
-0. **Moderation & Cache Consistency**: Rejected reports are now excluded from the public report feed even when importing inconsistent legacy data. Report and hazard writes explicitly invalidate their in-memory file and HTTP response caches, so moderation and hazard changes appear immediately instead of waiting for filesystem timestamp or cache expiry.
+0. **Headless Moderation Hardening**: Rejected reports are excluded from the public feed even with inconsistent legacy data; report/hazard writes invalidate server caches immediately; quarantined media remains available to authenticated AI re-checks; quarantine/restore moves use cross-platform safe replacement; invalid severities are rejected; legacy string attachments can be deleted; and an AI-withheld submission is no longer falsely shown as live in the submitter's browser.
 
 1. **Map Cleanup & Marker Polish**: Removed manual mapping and blue circle marker artifacts from `hazard-admin.html`. Segregated community reporting from official administrative inspection.
 2. **Codebase Hygiene**: Pruned dead `node-fetch` dependency (migrated to Node native `fetch`), deleted duplicate server files, and eliminated artificial emoji comments.

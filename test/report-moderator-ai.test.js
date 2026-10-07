@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { evaluateReportWithAI, reportAiConfig } from "../lib/report-moderator-ai.js";
 
 test("evaluateReportWithAI evaluates text-only report and returns structured verdict", async () => {
@@ -125,4 +128,34 @@ test("evaluateReportWithAI returns unverified when API key is missing", async ()
   assert.equal(result.verdict, "unverified");
   assert.equal(result.confidence, 0);
   assert.ok(result.reason.includes("not configured"));
+});
+
+test("evaluateReportWithAI can re-check images moved into quarantine", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alertly-ai-quarantine-"));
+  const uploadsDir = path.join(root, "uploads");
+  const quarantineDir = path.join(root, "quarantine");
+  fs.mkdirSync(uploadsDir);
+  fs.mkdirSync(quarantineDir);
+  fs.writeFileSync(path.join(quarantineDir, "flagged.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+
+  try {
+    const config = reportAiConfig({ REPORT_AI_API_KEY: "test-key", REPORT_AI_VISION_MODEL: "vision" });
+    await evaluateReportWithAI({
+      type: "Other",
+      text: "Moderator re-check",
+      geometry: { type: "Point", coordinates: [-88, 15] },
+      images: [{ url: "/api/moderation/media/flagged.jpg", type: "image" }]
+    }, {
+      config,
+      uploadsDir: [uploadsDir, quarantineDir],
+      request: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        const imageUrl = body.messages[1].content.find(part => part.type === "image_url").image_url.url;
+        assert.match(imageUrl, /^data:image\/jpeg;base64,\/9j\/2Q==$/);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: '{"verdict":"plausible","confidence":80,"reason":"The re-checked image is safe."}' } }] }) };
+      }
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

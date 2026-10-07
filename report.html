@@ -2785,13 +2785,21 @@ let pendingReport = null, pendingMarker = null;
 
         if (result.success) {
           console.log("💾 Report and Images saved to server.");
-          if (result.id) reportData.id = result.id;
-          if (result.images) reportData.images = result.images;
-          addReportToMap(reportData);
+          const savedReport = result.report || {
+            ...reportData,
+            id: result.id || reportData.id,
+            images: result.images || reportData.images
+          };
+          const isPublic = !savedReport.isRemoved && savedReport.moderationStatus !== "rejected";
+          if (isPublic) addReportToMap(savedReport);
           reportInput.value = "";
           setSelectedFiles([]);
           selectGeometryMode(geometryMode);
-          showAlertlyToast("Success!", "Your report is now live on the map.", "✅");
+          if (isPublic) {
+            showAlertlyToast("Success!", "Your report is now live on the map.", "✅");
+          } else {
+            showAlertlyToast("Submitted for review", "The report was withheld from the public map and sent to moderators.", "🛡️", 6000);
+          }
         } else {
           showAlertlyToast("Could not publish", result.error || "Please check the report and try again.", "❌");
         }

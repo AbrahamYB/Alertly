@@ -735,7 +735,7 @@ function quarantineReportMedia(report) {
     const filename = path.basename(media.url);
     const publicPath = path.join(UPLOADS_DIR, filename);
     const privatePath = path.join(QUARANTINE_DIR, filename);
-    if (fs.existsSync(publicPath)) fs.renameSync(publicPath, privatePath);
+    if (fs.existsSync(publicPath)) replaceFileSync(publicPath, privatePath);
     return { ...media, url: `/api/moderation/media/${filename}` };
   });
   return report;
@@ -747,7 +747,7 @@ function restoreQuarantinedMedia(report) {
     const filename = path.basename(media.url);
     const privatePath = path.join(QUARANTINE_DIR, filename);
     const publicPath = path.join(UPLOADS_DIR, filename);
-    if (fs.existsSync(privatePath)) fs.renameSync(privatePath, publicPath);
+    if (fs.existsSync(privatePath)) replaceFileSync(privatePath, publicPath);
     return { ...media, url: `/uploads/${filename}` };
   });
   return report;
@@ -765,7 +765,13 @@ app.patch("/api/moderation/reports/:id", requireModeratorOrAdmin, (req, res) => 
 
   if (req.body.type !== undefined) changes.type = sanitizeText(req.body.type, 100);
   if (req.body.text !== undefined) changes.text = sanitizeText(req.body.text, 4000);
-  if (req.body.severity !== undefined) changes.severity = String(req.body.severity).toLowerCase();
+  if (req.body.severity !== undefined) {
+    const value = String(req.body.severity).toLowerCase();
+    if (!["unknown", "low", "medium", "high", "critical"].includes(value)) {
+      return res.status(400).json({ success: false, error: "Invalid report severity." });
+    }
+    changes.severity = value;
+  }
   if (req.body.moderationStatus !== undefined) {
     const value = String(req.body.moderationStatus).toLowerCase();
     if (!allowedStatuses.has(value)) return res.status(400).json({ success: false, error: "Invalid moderation status." });
@@ -819,10 +825,11 @@ app.delete("/api/moderation/reports/:id", requireModeratorOrAdmin, (req, res) =>
   // Permanently delete public or quarantined media only after a moderator deletes the report.
   if (Array.isArray(removed.images)) {
     for (const img of removed.images) {
-      const isPublic = typeof img.url === "string" && img.url.startsWith("/uploads/");
-      const isQuarantined = typeof img.url === "string" && img.url.startsWith("/api/moderation/media/");
+      const mediaUrl = typeof img === "string" ? img : img?.url;
+      const isPublic = typeof mediaUrl === "string" && mediaUrl.startsWith("/uploads/");
+      const isQuarantined = typeof mediaUrl === "string" && mediaUrl.startsWith("/api/moderation/media/");
       if (isPublic || isQuarantined) {
-        const filename = path.basename(img.url);
+        const filename = path.basename(mediaUrl);
         const filepath = path.join(isQuarantined ? QUARANTINE_DIR : UPLOADS_DIR, filename);
         try {
           if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
@@ -890,7 +897,7 @@ app.post("/api/moderation/reports/:id/verify-ai", requireModeratorOrAdmin, async
 
   const target = reports[index];
   try {
-    const aiEvaluation = await evaluateReportWithAI(target, { uploadsDir: UPLOADS_DIR, onUsage: (entry) => aiUsage.record(entry) });
+    const aiEvaluation = await evaluateReportWithAI(target, { uploadsDir: [UPLOADS_DIR, QUARANTINE_DIR], onUsage: (entry) => aiUsage.record(entry) });
     reports[index] = applyReportAiEvaluation(reports[index], aiEvaluation);
     if (aiEvaluation.verdict === "nsfw") quarantineReportMedia(reports[index]);
     reports[index].updatedAt = new Date().toISOString();
