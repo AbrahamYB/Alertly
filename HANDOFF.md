@@ -288,6 +288,8 @@ npm test
 
 ## 10. RECENT CHANGE LOG
 
+0. **Moderation & Cache Consistency**: Rejected reports are now excluded from the public report feed even when importing inconsistent legacy data. Report and hazard writes explicitly invalidate their in-memory file and HTTP response caches, so moderation and hazard changes appear immediately instead of waiting for filesystem timestamp or cache expiry.
+
 1. **Map Cleanup & Marker Polish**: Removed manual mapping and blue circle marker artifacts from `hazard-admin.html`. Segregated community reporting from official administrative inspection.
 2. **Codebase Hygiene**: Pruned dead `node-fetch` dependency (migrated to Node native `fetch`), deleted duplicate server files, and eliminated artificial emoji comments.
 3. **Subsystem API Isolation**: Structured independent configuration namespaces for Chatbot AI (`CHAT_AI_*`), Report Moderator AI (`REPORT_AI_*`), and Feeds (`FIRMS_*`).

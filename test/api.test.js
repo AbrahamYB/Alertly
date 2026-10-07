@@ -112,6 +112,26 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   const reqId = foundReport.removalRequests[0].id;
   assert.equal(foundReport.removalRequests[0].status, "pending");
 
+  // Rejected reports disappear from the public map immediately, and restoring
+  // them makes them public again without stale cache state.
+  const rejectRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: staffCookie },
+    body: JSON.stringify({ moderationStatus: "rejected", action: "rejected-test" })
+  });
+  assert.equal(rejectRes.status, 200);
+  const rejectedPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
+  assert.equal(rejectedPublic.some(report => report.id === reportId), false);
+
+  const restoreRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: staffCookie },
+    body: JSON.stringify({ moderationStatus: "approved", action: "restored-test" })
+  });
+  assert.equal(restoreRes.status, 200);
+  const restoredPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
+  assert.equal(restoredPublic.some(report => report.id === reportId), true);
+
   // 4. Resolve removal request (accept)
   const resolveRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}/removal-requests/${reqId}/resolve`, {
     method: "POST",

@@ -218,6 +218,8 @@ function saveReports(reports) {
   try {
     fs.writeFileSync(tempFile, `${JSON.stringify(reports, null, 2)}\n`);
     replaceFileSync(tempFile, REPORTS_FILE);
+    reportsFileCache = { mtimeMs: -1, data: null };
+    publicResponseCache.clear();
   } catch (err) {
     try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch (_) {}
     throw err;
@@ -266,6 +268,9 @@ function saveHazards(data) {
   try {
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
     replaceFileSync(tempFile, HAZARDS_FILE);
+    hazardsFileCache = { mtimeMs: -1, data: null };
+    normalizedHazardsCache = { mtimeMs: -1, data: null };
+    publicResponseCache.clear();
   } catch (e) {
     try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch (_) {}
     console.error("Failed to save hazards:", e);
@@ -698,7 +703,8 @@ app.get("/api/provider-status", (_req, res) => {
 
 app.get("/api/reports/data", (req, res) => {
   return sendCachedJson(req, res, "reports", REPORTS_FILE, 10, () =>
-    getReports().filter((report) => req.query.includeRemoved === "true" || !report.isRemoved).flatMap((report) => {
+    getReports().filter((report) => req.query.includeRemoved === "true"
+      || (!report.isRemoved && String(report.moderationStatus || "pending").toLowerCase() !== "rejected")).flatMap((report) => {
       try { return [sanitizeReportForPublic(report)]; } catch { return []; }
     })
   );
