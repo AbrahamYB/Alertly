@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Alertly — Staff Access</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07111f; --panel:rgba(15,28,47,.9); --line:rgba(148,163,184,.2); --text:#f8fafc; --muted:#94a3b8; --accent:#38bdf8; --accent2:#2563eb; --danger:#fb7185; --ok:#34d399; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif; color:var(--text); background:radial-gradient(circle at 15% 10%,rgba(37,99,235,.22),transparent 35%),radial-gradient(circle at 90% 90%,rgba(14,165,233,.12),transparent 30%),var(--bg); }
+    a { color:inherit; }
+    .shell { width:min(1080px,calc(100% - 28px)); margin:0 auto; padding:28px 0 60px; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:28px; }
+    .brand { display:flex; align-items:center; gap:12px; text-decoration:none; font-weight:900; letter-spacing:.02em; }
+    .mark { width:42px; height:42px; display:grid; place-items:center; border-radius:14px; background:linear-gradient(135deg,var(--accent2),var(--accent)); box-shadow:0 14px 40px rgba(37,99,235,.3); }
+    .back { color:var(--muted); text-decoration:none; font-weight:700; }
+    .card { border:1px solid var(--line); border-radius:24px; background:var(--panel); box-shadow:0 24px 80px rgba(0,0,0,.34); backdrop-filter:blur(18px); padding:24px; }
+    .auth-card { width:min(480px,100%); margin:9vh auto 0; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { font-size:clamp(28px,5vw,44px); margin-bottom:10px; }
+    h2 { font-size:22px; }
+    .muted { color:var(--muted); line-height:1.55; }
+    label { display:block; margin:16px 0 7px; font-size:13px; font-weight:800; color:#cbd5e1; }
+    input,select { width:100%; border:1px solid var(--line); border-radius:13px; background:rgba(2,6,23,.7); color:var(--text); padding:13px 14px; font:inherit; outline:none; }
+    input:focus,select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,.12); }
+    button,.button { border:0; border-radius:13px; padding:12px 16px; font:inherit; font-weight:850; cursor:pointer; color:white; background:linear-gradient(135deg,var(--accent2),#0284c7); text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+    button.secondary,.button.secondary { background:rgba(148,163,184,.12); border:1px solid var(--line); }
+    button.danger { background:rgba(244,63,94,.14); border:1px solid rgba(244,63,94,.35); color:#fecdd3; }
+    .button.danger-link { background:linear-gradient(135deg,#be123c,#e11d48); border:1px solid rgba(251,113,133,.55); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .full { width:100%; margin-top:18px; }
+    .hidden { display:none !important; }
+    .message { min-height:22px; margin-top:14px; font-size:14px; color:var(--muted); }
+    .message.error { color:#fda4af; }
+    .message.success { color:#6ee7b7; }
+    .hero { display:flex; justify-content:space-between; align-items:center; gap:28px; margin-bottom:24px; }
+    .identity { display:flex; align-items:center; gap:12px; }
+    .identity-details { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .avatar { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(135deg,#0ea5e9,#6366f1); font-weight:900; }
+    .role { display:inline-flex; margin-top:3px; padding:3px 8px; border-radius:99px; color:#bae6fd; background:rgba(14,165,233,.14); font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.08em; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+    .span-2 { grid-column:1/-1; }
+    .actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .action { min-height:100px; justify-content:flex-start; padding:18px; text-align:left; font-size:16px; }
+    .row { display:flex; gap:10px; align-items:center; }
+    .row > input,.row > select { flex:1; }
+    .result { padding:12px; border-radius:12px; background:rgba(2,6,23,.65); border:1px solid var(--line); overflow-wrap:anywhere; margin-top:12px; }
+    .list { display:grid; gap:10px; }
+    .list-item { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px; border:1px solid var(--line); border-radius:14px; background:rgba(2,6,23,.35); }
+    .list-item strong,.list-item small { display:block; }
+    .list-item small { color:var(--muted); margin-top:3px; }
+    .audit { max-height:420px; overflow:auto; }
+    .audit-item { padding:11px 0; border-bottom:1px solid var(--line); }
+    .audit-item:last-child { border:0; }
+    .audit-item code { color:#7dd3fc; }
+    .audit-item small { color:var(--muted); display:block; margin-top:4px; }
+    @media (max-width:760px) { .grid,.actions { grid-template-columns:1fr; } .span-2 { grid-column:auto; } .hero { align-items:flex-start; flex-direction:column; } .row { align-items:stretch; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section id="loginView" class="card auth-card hidden">
+      <h1>Staff sign in</h1>
+      <p class="muted">Use the individual account you created from an Alertly invitation.</p>
+      <form id="loginForm">
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" type="email" autocomplete="username" required />
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <button class="full" type="submit">Sign in</button>
+      </form>
+      <div id="loginMessage" class="message" aria-live="polite"></div>
+    </section>
+
+    <section id="joinView" class="card auth-card hidden">
+      <h1>Create your account</h1>
+      <p class="muted">This invitation works once. Choose your own credentials; the invitation link will be invalidated after setup.</p>
+      <form id="joinForm">
+        <label for="joinName">Full name</label>
+        <input id="joinName" maxlength="100" autocomplete="name" required />
+        <label for="joinEmail">Email</label>
+        <input id="joinEmail" type="email" autocomplete="email" required />
+        <label for="joinPassword">Password</label>
+        <input id="joinPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+        <label for="joinConfirm">Confirm password</label>
+        <input id="joinConfirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+        <button class="full" type="submit">Create Staff account</button>
+      </form>
+      <div id="joinMessage" class="message" aria-live="polite"></div>
+    </section>
+
+    <section id="dashboardView" class="hidden">
+      <div class="hero">
+        <div><h1>Staff workspace</h1><p class="muted">Protected Alertly operations and account access.</p></div>
+        <div class="identity"><div class="identity-details"><strong id="userName"></strong><span id="userRole" class="role"></span></div><button id="signOutBtn" class="secondary">Sign out</button></div>
+      </div>
+
+      <div class="grid">
+        <section class="card span-2">
+          <h2>Management</h2>
+          <div class="actions">
+            <a class="button action" href="/hazard-admin">🚨 Manage official hazards</a>
+            <a class="button action danger-link" href="/moderation">🛡️ Moderate community reports</a>
+          </div>
+        </section>
+
+        <section id="transferOfferCard" class="card span-2 hidden">
+          <h2>Ownership offered to you</h2>
+          <p id="transferOfferText" class="muted"></p>
+          <form id="acceptTransferForm" class="row">
+            <input id="acceptTransferPassword" type="password" autocomplete="current-password" placeholder="Re-enter your password" required />
+            <button type="submit">Accept ownership</button>
+          </form>
+          <div id="acceptTransferMessage" class="message"></div>
+        </section>
+
+        <section id="inviteCard" class="card owner-only hidden">
+          <h2>Invite Staff</h2>
+          <p class="muted">Generate a private, one-time signup link valid for 24 hours.</p>
+          <form id="inviteForm">
+            <label for="inviteEmail">Email to reserve</label>
+            <input id="inviteEmail" type="email" placeholder="person@example.com" required />
+            <button class="full" type="submit">Generate invitation</button>
+          </form>
+          <div id="inviteResult" class="hidden">
+            <div id="inviteUrl" class="result"></div>
+            <button id="copyInviteBtn" class="secondary full" type="button">Copy link</button>
+          </div>
+          <div id="inviteMessage" class="message"></div>
+        </section>
+
+        <section id="accountsCard" class="card owner-only hidden">
+          <h2>Staff accounts</h2>
+          <div id="accountsList" class="list"></div>
+        </section>
+
+        <section id="transferCard" class="card owner-only hidden">
+          <h2>Transfer ownership</h2>
+          <p class="muted">The selected Staff member must accept within 24 hours. Until then, you remain Owner.</p>
+          <form id="transferForm">
+            <label for="transferTarget">New Owner</label>
+            <select id="transferTarget" required></select>
+            <label for="transferPassword">Re-enter your password</label>
+            <input id="transferPassword" type="password" autocomplete="current-password" required />
+            <button class="full danger" type="submit">Begin ownership transfer</button>
+          </form>
+          <div id="transferMessage" class="message"></div>
+        </section>
+
+        <section id="auditCard" class="card owner-only hidden">
+          <h2>Audit trail</h2>
+          <p class="muted">Always-on access and management history. Sensitive credentials are never recorded.</p>
+          <div id="auditList" class="audit"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const token = new URLSearchParams(location.search).get("token") || "";
+    const returnToRaw = new URLSearchParams(location.search).get("returnTo") || "";
+    const returnTo = returnToRaw.startsWith("/") && !returnToRaw.startsWith("//") ? returnToRaw : "";
+    let currentUser = null;
+    let currentInviteUrl = "";
+    let pendingTransfer = null;
+
+    function show(view) {
+      ["loginView", "joinView", "dashboardView"].forEach((id) => $(id).classList.toggle("hidden", id !== view));
+    }
+
+    function message(id, text, type = "") {
+      const el = $(id);
+      el.textContent = text || "";
+      el.className = `message ${type}`.trim();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[char]));
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, { cache: "no-store", ...options, headers: { ...(options.body ? { "Content-Type":"application/json" } : {}), ...(options.headers || {}) } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+      return data;
+    }
+
+    async function boot() {
+      if (token) {
+        show("joinView");
+        return;
+      }
+      const session = await api("/api/staff/session");
+      if (!session.authenticated) {
+        show("loginView");
+        return;
+      }
+      await renderDashboard(session.user);
+      if (returnTo) location.assign(returnTo);
+    }
+
+    async function renderDashboard(user) {
+      currentUser = user;
+      show("dashboardView");
+      $("userName").textContent = user.name;
+      $("userRole").textContent = user.role;
+      document.querySelectorAll(".owner-only").forEach((el) => el.classList.toggle("hidden", user.role !== "owner"));
+      await loadTransferOffer();
+      if (user.role === "owner") await Promise.all([loadAccounts(), loadAudit()]);
+    }
+
+    $("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      message("loginMessage", "Signing in…");
+      try {
+        const data = await api("/api/staff/sign-in", { method:"POST", body:JSON.stringify({ email:$("loginEmail").value, password:$("loginPassword").value }) });
+        if (returnTo) return location.assign(returnTo);
+        await renderDashboard(data.user);
+      } catch (error) { message("loginMessage", error.message, "error"); }
+    });
+
+    $("joinForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if ($("joinPassword").value !== $("joinConfirm").value) return message("joinMessage", "Passwords do not match.", "error");
+      message("joinMessage", "Creating your account…");
+      try {
+        const data = await api("/api/staff/join", { method:"POST", body:JSON.stringify({ token, name:$("joinName").value, email:$("joinEmail").value, password:$("joinPassword").value }) });
+        history.replaceState({}, "", "/staff");
+        await renderDashboard(data.user);
+      } catch (error) { message("joinMessage", error.message, "error"); }
+    });
+
+    $("signOutBtn").addEventListener("click", async () => {
+      await api("/api/staff/sign-out", { method:"POST" });
+      location.assign("/staff");
+    });
+
+    $("inviteForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      message("inviteMessage", "Generating…");
+      try {
+        const data = await api("/api/staff/invitations", { method:"POST", body:JSON.stringify({ email:$("inviteEmail").value }) });
+        currentInviteUrl = data.inviteUrl;
+        $("inviteUrl").textContent = currentInviteUrl;
+        $("inviteResult").classList.remove("hidden");
+        message("inviteMessage", "Invitation created. The link is displayed only now.", "success");
+        await loadAccounts();
+        await loadAudit();
+      } catch (error) { message("inviteMessage", error.message, "error"); }
+    });
+
+    $("copyInviteBtn").addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(currentInviteUrl);
+        } else {
+          const helper = document.createElement("textarea");
+          helper.value = currentInviteUrl;
+          helper.setAttribute("readonly", "");
+          helper.style.position = "fixed";
+          helper.style.opacity = "0";
+          document.body.appendChild(helper);
+          helper.select();
+          const copied = document.execCommand("copy");
+          helper.remove();
+          if (!copied) throw new Error("Copy was blocked");
+        }
+        message("inviteMessage", "Invitation copied.", "success");
+      } catch (_) {
+        window.prompt("Copy this invitation link:", currentInviteUrl);
+        message("inviteMessage", "Use the highlighted link in the copy window.", "success");
+      }
+    });
+
+    async function loadAccounts() {
+      const data = await api("/api/staff/accounts");
+      const accounts = data.accounts || [];
+      $("accountsList").innerHTML = accounts.map((account) => `
+        <div class="list-item">
+          <div><strong>${escapeHtml(account.name)}</strong><small>${escapeHtml(account.email)} · ${escapeHtml(account.role)} · ${account.activeSessions} active session${account.activeSessions === 1 ? "" : "s"}</small></div>
+          ${account.role === "owner" ? "" : `<button class="${account.disabledAt ? "secondary" : "danger"}" data-account-id="${account.id}" data-disabled="${account.disabledAt ? "false" : "true"}">${account.disabledAt ? "Restore" : "Disable"}</button>`}
+        </div>`).join("") || '<p class="muted">No accounts yet.</p>';
+      $("accountsList").querySelectorAll("[data-account-id]").forEach((button) => button.addEventListener("click", async () => {
+        await api(`/api/staff/accounts/${encodeURIComponent(button.dataset.accountId)}/disabled`, { method:"POST", body:JSON.stringify({ disabled:button.dataset.disabled === "true" }) });
+        await loadAccounts();
+        await loadAudit();
+      }));
+      const eligible = accounts.filter((account) => account.role === "staff" && !account.disabledAt);
+      $("transferTarget").innerHTML = '<option value="">Select Staff member</option>' + eligible.map((account) => `<option value="${account.id}">${escapeHtml(account.name)} — ${escapeHtml(account.email)}</option>`).join("");
+      pendingTransfer = data.transfer || null;
+      if (pendingTransfer) message("transferMessage", `Transfer pending for ${pendingTransfer.to?.name || "Staff"} until ${new Date(pendingTransfer.expiresAt).toLocaleString()}.`, "success");
+    }
+
+    $("transferForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!confirm("Begin ownership transfer? You remain Owner until the recipient accepts.")) return;
+      try {
+        await api("/api/staff/ownership-transfer", { method:"POST", body:JSON.stringify({ targetUserId:$("transferTarget").value, password:$("transferPassword").value }) });
+        $("transferPassword").value = "";
+        message("transferMessage", "Ownership transfer is awaiting acceptance.", "success");
+        await loadAccounts();
+        await loadAudit();
+      } catch (error) { message("transferMessage", error.message, "error"); }
+    });
+
+    async function loadTransferOffer() {
+      const data = await api("/api/staff/ownership-transfer");
+      const transfer = data.transfer;
+      const offered = transfer && transfer.toUserId === currentUser.id;
+      $("transferOfferCard").classList.toggle("hidden", !offered);
+      if (offered) {
+        pendingTransfer = transfer;
+        $("transferOfferText").textContent = `${transfer.from.name} offered you ownership. The offer expires ${new Date(transfer.expiresAt).toLocaleString()}. Accepting signs both accounts out.`;
+      }
+    }
+
+    $("acceptTransferForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/api/staff/ownership-transfer/${encodeURIComponent(pendingTransfer.id)}/accept`, { method:"POST", body:JSON.stringify({ password:$("acceptTransferPassword").value }) });
+        alert("Ownership transferred. Please sign in again.");
+        location.assign("/staff");
+      } catch (error) { message("acceptTransferMessage", error.message, "error"); }
+    });
+
+    async function loadAudit() {
+      const data = await api("/api/staff/audit?limit=100");
+      $("auditList").innerHTML = (data.events || []).map((event) => `<div class="audit-item"><code>${escapeHtml(event.action)}</code> · ${escapeHtml(event.outcome)}<small>${new Date(event.timestamp).toLocaleString()} · ${escapeHtml(event.actor?.email || event.actor?.role || "system")} ${event.target?.email ? `→ ${escapeHtml(event.target.email)}` : ""}</small></div>`).join("") || '<p class="muted">No audit events yet.</p>';
+    }
+
+    boot().catch((error) => { show("loginView"); message("loginMessage", error.message, "error"); });
+  </script>
+</body>
+</html>

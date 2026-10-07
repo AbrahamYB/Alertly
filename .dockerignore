@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.stfolder
+.sync
+.tmp*
+data/staff-access.json
+data/audit.jsonl

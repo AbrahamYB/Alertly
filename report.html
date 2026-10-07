@@ -1,0 +1,3029 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Alertly – Community Reports</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --surface: rgba(20, 20, 25, 0.65);
+      --glass: rgba(255, 255, 255, 0.03);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #3b82f6;
+      --accent2: #6366f1;
+      --success: #10b981;
+      --text: #f1f5f9;
+      --muted: rgba(241, 245, 249, .5);
+      --radius: 24px;
+      --font: 'Inter', system-ui, sans-serif;
+
+      --glass-blur: 50px;
+      --glass-sat: 200%;
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --glass-shadow:
+        0 12px 40px -10px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+
+      --glass-hi-1: rgba(255, 255, 255, 0.08);
+      --glass-hi-2: rgba(255, 255, 255, 0.04);
+
+      --accent-purple-solid: #4f46e5;
+      --accent-purple: rgba(79, 70, 229, 0.86);
+      --base-sidebar: rgba(20, 25, 35, 0.65);
+      --base-input: rgba(15, 18, 25, 0.65);
+      --base-chat: rgba(20, 25, 35, 0.65);
+      --row-bg: rgba(255, 255, 255, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    html,
+    body {
+      height: 100%;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+.container {
+      position: relative;
+      height: 100vh;
+      width: 100%
+    }
+
+    .main {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column
+    }
+
+    #map {
+      flex: 1;
+      width: 100%
+    }
+
+.sidebar {
+      position: fixed;
+      left: 16px;
+      top: 16px;
+      width: 284px;
+      max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 32px);
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      box-sizing: border-box;
+      padding: 14px 20px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 5000;
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .sidebar:not(.collapsed) {
+      overflow-y: auto;
+    }
+
+    .sidebar.collapsed {
+      width: 66px;
+      max-height: 66px;
+      padding: 14px 20px;
+      gap: 0;
+    }
+
+    .sidebar.collapsed h2 {
+      width: 0;
+      opacity: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      pointer-events: auto;
+      
+    }
+
+    .sidebar-content {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .sidebar.collapsed .sidebar-content {
+      opacity: 0;
+      transform: translateY(-20px);
+      pointer-events: none;
+    }
+
+    #sidebarToggle {
+      cursor: pointer;
+      transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .sidebar.collapsed #sidebarToggle {
+      transform: rotate(90deg);
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #4338ca 100%);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.20);
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+      transition: filter 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
+
+    .sidebar-icon::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 40% 25%, rgba(255, 255, 255, 0.25), transparent 65%);
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .sidebar-icon:hover {
+      filter: brightness(1.07);
+      border-color: rgba(255, 255, 255, 0.22);
+      box-shadow: 0 6px 22px rgba(99, 102, 241, 0.60), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .sidebar h2 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .section {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 19px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+#mapBtn {
+      position: fixed;
+      top: 18px;
+      right: 20px;
+      height: 48px;
+      padding: 0 16px 0 8px;
+      gap: 11px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+      cursor: pointer;
+      z-index: 1001;
+      user-select: none;
+      white-space: nowrap;
+      transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 160ms ease, filter 160ms ease;
+    }
+
+    #mapBtn .map-btn-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      box-shadow: 0 3px 10px rgba(99, 102, 241, 0.38);
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #mapBtn .map-btn-icon::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 40% 25%, rgba(255, 255, 255, 0.3), transparent 65%);
+      pointer-events: none;
+      opacity: 0.8;
+    }
+
+    #mapBtn .map-btn-label {
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font);
+      color: var(--text);
+      letter-spacing: 0.02em;
+      line-height: 1;
+    }
+
+    #mapBtn:hover {
+      transform: scale(1.04);
+      filter: brightness(1.07);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4),
+        0 0 20px rgba(99, 102, 241, 0.35),
+        var(--glass-shadow);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    #mapBtn:active {
+      transform: scale(0.96);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 7px
+    }
+
+    .control label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      opacity: .85;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 9px;
+    }
+
+    .control small {
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.3
+    }
+
+    .control select,
+    .control input[type=range] {
+      width: 100%
+    }
+
+    .glass-select-wrapper {
+      position: relative;
+      width: 100%;
+      display: flex;
+      align-items: center;
+    }
+
+    .glass-select-wrapper::after {
+      content: "";
+      position: absolute;
+      right: 14px;
+      width: 10px;
+      height: 6px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23f1f5f9' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-size: contain;
+      pointer-events: none;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 2;
+    }
+
+    .glass-select-wrapper.open::after {
+      transform: rotate(180deg);
+    }
+
+    .control select {
+      width: 100%;
+      background: var(--glass);
+      color: var(--text);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 10px 36px 10px 14px;
+      outline: none;
+      font-size: 14px;
+      font-family: var(--font);
+      cursor: pointer;
+      appearance: none;
+      transition: all 0.2s ease;
+      position: relative;
+      z-index: 1;
+      backdrop-filter: blur(10px);
+    }
+
+    .control select option {
+      background-color: #111827;
+      color: #f1f5f9;
+      padding: 12px;
+    }
+
+    .control select:hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .glass-select-wrapper.open select,
+    .control select:focus {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.04);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), 0 8px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .control select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, .18)
+    }
+
+.control input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, .12);
+      cursor: pointer;
+    }
+
+    .control input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, .5);
+      cursor: pointer;
+    }
+
+.toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 13px;
+      border-radius: 13px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+    }
+
+    .toggle-row span {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text)
+    }
+
+    .switch {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      flex-shrink: 0
+    }
+
+    .switch input {
+      display: none
+    }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: .18s ease;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 4px;
+      top: 3px;
+      border-radius: 50%;
+      background: #fff;
+      transition: .18s ease;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+    }
+
+    .switch input:checked+.slider {
+      background: var(--accent);
+      border-color: var(--accent)
+    }
+
+    .switch input:checked+.slider::before {
+      transform: translateX(20px)
+    }
+
+#miniMap {
+      height: 137px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .2)
+    }
+
+    #miniMap .leaflet-control-container {
+      display: none
+    }
+
+.map-title {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 700;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .map-title h1 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -.3px;
+      text-shadow: 0 8px 24px rgba(0, 0, 0, .6), 0 2px 6px rgba(0, 0, 0, .5);
+    }
+
+    .map-title .subtitle {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, .85);
+      background: rgba(0, 0, 0, .35);
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 99px;
+      padding: 3px 12px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      text-shadow: none;
+      white-space: nowrap;
+    }
+
+.input-wrap {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 94%;
+      max-width: 720px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .geometry-row {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 4px 0;
+    }
+
+    .geometry-btn {
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 12px;
+      padding: 6px 10px;
+      color: var(--text);
+      background: rgba(18, 24, 38, .82);
+      backdrop-filter: blur(12px);
+      font: 700 12px var(--font);
+      cursor: pointer;
+      box-shadow: var(--glass-shadow);
+      transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease;
+    }
+
+    .geometry-btn:hover:not(.active):not(:disabled) {
+      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .geometry-btn.active {
+      background: linear-gradient(135deg, #6366f1, #4338ca);
+      border-color: rgba(255, 255, 255, .34);
+    }
+
+    .geometry-btn:disabled {
+      opacity: .42;
+      cursor: default;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .area-vertex {
+      width: 18px;
+      height: 18px;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      background: #6366f1;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .55);
+      cursor: grab;
+    }
+
+    .area-vertex:active {
+      cursor: grabbing;
+    }
+
+    .location-status {
+      color: rgba(255, 255, 255, .92);
+      background: rgba(18, 24, 38, .72);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+.chip-bar {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      justify-content: center;
+      pointer-events: auto;
+      padding: 6px 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 13px;
+      border-radius: 99px;
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      cursor: pointer;
+      user-select: none;
+      font-size: 12.5px;
+      font-weight: 600;
+      font-family: var(--font);
+      color: var(--text);
+      box-shadow: var(--glass-shadow);
+      transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+
+    .chip:hover {
+      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .chip.active {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #4338ca 100%);
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+    }
+
+    .chip.active:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(59, 130, 246, .5);
+    }
+
+    .input-area {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      background: var(--surface);
+      border-radius: 999px;
+      padding: 7px;
+      gap: 12px;
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(115%) brightness(105%);
+      transition: box-shadow 0.28s ease, border-color 0.28s ease;
+    }
+
+    .input-area:focus-within {
+      border-color: rgba(99, 102, 241, 0.55);
+      box-shadow:
+        0 0 0 3px rgba(99, 102, 241, 0.18),
+        0 16px 48px rgba(0, 0, 0, 0.52),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .input-area input[type=text] {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: #f1f5f9;
+      caret-color: #818cf8;
+      padding: 10px 6px;
+      font-size: 15px;
+      font-family: var(--font);
+      font-weight: 500;
+      outline: none;
+      min-width: 0;
+      letter-spacing: 0.01em;
+    }
+
+    .input-area input[type=text]::placeholder {
+      color: rgba(148, 163, 184, 0.50);
+      font-weight: 400;
+    }
+
+    .input-area input[type=file] {
+      display: none
+    }
+
+    .upload-btn {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #ffffff;
+      cursor: pointer;
+      line-height: 0;
+      border-radius: 50%;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #4338ca 100%);
+      transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.20);
+    }
+
+    .upload-btn::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 40% 25%, rgba(255, 255, 255, 0.25), transparent 65%);
+      pointer-events: none;
+      opacity: 0.7;
+      border-radius: 50%;
+    }
+
+    .upload-btn:hover {
+      transform: translateY(-1px) scale(1.08);
+      filter: brightness(1.07);
+      border-color: rgba(255, 255, 255, 0.22);
+      box-shadow: 0 6px 22px rgba(99, 102, 241, 0.60), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .upload-btn:active {
+      transform: scale(0.96);
+    }
+
+    .upload-btn svg {
+      width: 19px;
+      height: 19px;
+      display: block
+    }
+
+.file-pill {
+      display: none;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 9px;
+      border-radius: 99px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: var(--glass-shadow);
+      max-width: 240px;
+      overflow: hidden;
+      flex: 0 1 auto;
+    }
+
+    .file-thumb {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: rgba(0, 0, 0, .06);
+      flex-shrink: 0;
+      cursor: zoom-in
+    }
+
+    .file-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px
+    }
+
+    .file-multi {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      overflow: hidden;
+      max-width: 160px;
+      flex: 0 1 auto
+    }
+
+    .file-multi img {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: rgba(0, 0, 0, .06);
+      border: 1px solid rgba(0, 0, 0, .08);
+      flex-shrink: 0;
+      cursor: zoom-in
+    }
+
+    .file-more {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 800;
+      color: #fff;
+      background: var(--accent);
+      border: 1px solid rgba(0, 0, 0, .08);
+      flex-shrink: 0;
+      cursor: zoom-in;
+    }
+
+    .file-clear {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+      color: var(--muted);
+      padding: 0 2px;
+      flex-shrink: 0
+    }
+
+    .file-clear:hover {
+      color: var(--text)
+    }
+
+    .send-btn {
+      flex-shrink: 0;
+      border: none;
+      padding: 0 18px;
+      height: 40px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      font-family: var(--font);
+      letter-spacing: 0.03em;
+      line-height: 1;
+      color: #fff;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #4338ca 100%);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 2px 12px rgba(99, 102, 241, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.20);
+      position: relative;
+      overflow: hidden;
+      transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 150ms ease, filter 150ms ease;
+      white-space: nowrap;
+    }
+
+    .send-btn::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.26), transparent 65%);
+      pointer-events: none;
+      opacity: 0.9;
+    }
+
+    .send-btn:hover {
+      transform: translateY(-1px) scale(1.02);
+      box-shadow: 0 6px 22px rgba(99, 102, 241, 0.60), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      filter: brightness(1.07);
+    }
+
+    .send-btn:active {
+      transform: scale(0.97);
+      filter: brightness(0.96);
+    }
+
+    .leaflet-control-attribution {
+      max-width: min(58vw, 360px);
+      padding: 2px 5px !important;
+      border-radius: 7px 0 0 0;
+      background: rgba(10, 15, 24, .58) !important;
+      color: rgba(255, 255, 255, .62) !important;
+      font: 500 9px/1.25 var(--font) !important;
+      opacity: .62;
+      transition: opacity .15s ease;
+    }
+
+    .leaflet-control-attribution:hover,
+    .leaflet-control-attribution:focus-within {
+      opacity: .94;
+    }
+
+    .leaflet-control-attribution a {
+      color: rgba(210, 225, 255, .82) !important;
+    }
+
+    .map-credit-details {
+      display: inline-block;
+    }
+
+    .map-credit-details summary {
+      display: inline;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .map-credit-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .map-credit-details[open] .map-credit-full {
+      display: block;
+      margin-top: 3px;
+      max-width: 340px;
+    }
+
+    .map-credit-full {
+      display: none;
+    }
+
+.leaflet-popup-content-wrapper {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      border-radius: 0 !important;
+    }
+
+    .leaflet-popup-content {
+      margin: 0 !important;
+      width: auto !important;
+    }
+
+    .leaflet-popup-tip-container {
+      display: none !important;
+    }
+
+    .leaflet-popup-close-button {
+      top: 10px !important;
+      right: 10px !important;
+      width: 28px !important;
+      height: 28px !important;
+      border-radius: 50% !important;
+      background: rgba(0, 0, 0, .35) !important;
+      color: rgba(255, 255, 255, .85) !important;
+      font-size: 18px !important;
+      line-height: 28px !important;
+      text-align: center !important;
+      border: 1px solid rgba(255, 255, 255, .18) !important;
+      backdrop-filter: blur(6px);
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 0 !important;
+      z-index: 10 !important;
+      transition: background .15s !important;
+    }
+
+    .leaflet-popup-close-button:hover {
+      background: rgba(0, 0, 0, .55) !important;
+    }
+
+.placement-hint .leaflet-popup-content-wrapper {
+      background: rgba(0, 0, 0, .35) !important;
+      color: #fff !important;
+      border-radius: 99px !important;
+      padding: 6px 16px !important;
+      box-shadow: none !important;
+      border: 1px solid rgba(255, 255, 255, .18) !important;
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+    }
+
+    .placement-hint .leaflet-popup-content {
+      margin: 4px 0 !important;
+      font-weight: 800 !important;
+      font-size: 16px !important;
+      text-align: center !important;
+      white-space: nowrap !important;
+      letter-spacing: -0.3px !important;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, .5) !important;
+    }
+
+    .placement-hint .leaflet-popup-close-button {
+      display: none !important;
+    }
+
+.report-card {
+      width: 290px;
+      border-radius: 20px;
+      overflow: hidden;
+      font-family: var(--font);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .08);
+      background: #0f172a;
+    }
+
+.rc-header {
+      padding: 14px 16px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+    }
+
+    .rc-emoji-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid rgba(255, 255, 255, .22);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+      backdrop-filter: blur(4px);
+    }
+
+    .rc-header-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .rc-type-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rc-meta {
+      font-size: 11px;
+      color: rgba(255, 255, 255, .5);
+      margin-top: 2px;
+    }
+
+.rc-body {
+      padding: 0 16px 14px;
+    }
+
+    .rc-divider {
+      height: 1px;
+      background: rgba(255, 255, 255, .07);
+      margin: 0 16px 12px;
+    }
+
+    .rc-text {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, .88);
+    }
+
+.rc-image {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      display: block;
+      cursor: zoom-in;
+      transition: transform .2s ease;
+    }
+
+    .rc-image:hover {
+      transform: scale(1.015);
+    }
+
+    .rc-image-wrap {
+      overflow: hidden;
+      border-radius: 12px;
+      margin-top: 12px;
+      border: 1px solid rgba(255, 255, 255, .1);
+      background: rgba(0, 0, 0, .25);
+    }
+
+.rc-gallery {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .rc-gallery.cols-2 {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .rc-gallery.cols-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .rc-gallery-cell {
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, .25);
+      border: 1px solid rgba(255, 255, 255, .08);
+      aspect-ratio: 1;
+    }
+
+    .rc-gallery-cell img,
+    .rc-gallery-cell video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      cursor: zoom-in;
+      transition: transform .2s ease;
+    }
+
+    .rc-gallery-cell img:hover {
+      transform: scale(1.06);
+    }
+
+.rc-gallery.cols-2 .rc-gallery-cell:first-child {
+      aspect-ratio: auto;
+      height: 140px;
+    }
+
+    .rc-gallery.cols-3 .rc-gallery-cell {
+      height: 78px;
+    }
+
+.rc-footer {
+      padding: 0 16px 14px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .rc-remove-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .rc-remove-btn:hover {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+.alertly-pin {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      box-shadow: 0 6px 18px rgba(59, 130, 246, .45);
+      position: relative;
+      border: 3px solid #fff;
+    }
+
+    .pin-pop {
+      animation: pinPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @keyframes pinPop {
+      0% {
+        transform: rotate(-45deg) scale(0);
+        opacity: 0;
+      }
+
+      80% {
+        transform: rotate(-45deg) scale(1.15);
+      }
+
+      100% {
+        transform: rotate(-45deg) scale(1);
+        opacity: 1;
+      }
+    }
+
+    .alertly-pin.mini {
+      width: 20px;
+      height: 20px;
+      border-width: 2px;
+      box-shadow: 0 4px 10px rgba(59, 130, 246, .4)
+    }
+
+.image-viewer {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 100000;
+    }
+
+    .image-viewer.open {
+      display: flex
+    }
+
+    .image-viewer-inner {
+      position: relative;
+      max-width: min(1200px, 96vw);
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 92vh;
+      max-height: 92vh
+    }
+
+    .image-viewer-top {
+      display: none
+    }
+
+    .image-viewer-stage {
+      width: 100%;
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: 16px;
+      background: transparent;
+      position: relative;
+      touch-action: none;
+      min-height: 240px;
+    }
+
+    .image-pan {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translate3d(0, 0, 0);
+      will-change: transform
+    }
+
+    .image-frame {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, .5);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+      transform: scale(1);
+      transform-origin: center;
+      will-change: transform;
+      transition: transform 300ms cubic-bezier(.22, 1, .36, 1);
+      position: relative;
+    }
+
+    .image-viewer-img {
+      width: auto;
+      height: auto;
+      max-width: min(1200px, 96vw);
+      max-height: 86vh;
+      object-fit: contain;
+      user-select: none;
+      cursor: zoom-in;
+      -webkit-user-drag: none;
+      display: block;
+    }
+
+    .image-frame.zoomed .image-viewer-img {
+      cursor: grab
+    }
+
+    .image-frame.dragging {
+      cursor: grabbing;
+      transition: none
+    }
+
+    .image-frame.dragging .image-viewer-img {
+      cursor: grabbing
+    }
+
+    .image-close-x {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, .25);
+      background: rgba(0, 0, 0, .4);
+      color: #fff;
+      cursor: pointer;
+      z-index: 5;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .4);
+      user-select: none;
+      transition: background .15s;
+    }
+
+    .image-close-x:hover {
+      background: rgba(0, 0, 0, .6)
+    }
+
+    .image-close-x:active {
+      transform: translateY(1px)
+    }
+
+    .image-close-x svg {
+      width: 18px;
+      height: 18px;
+      display: block
+    }
+
+.alertly-toast-container {
+      position: fixed;
+      top: 84px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      pointer-events: none;
+      width: min(400px, 90vw);
+    }
+
+    .alertly-toast {
+      pointer-events: auto;
+      background: rgba(20, 25, 35, 0.85);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 14px 18px;
+      color: #fff;
+      font-size: 14px;
+      font-family: var(--font);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      animation: toastIn 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+      transition: all 0.3s ease;
+    }
+
+    .alertly-toast.fade-out {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+
+    @keyframes toastIn {
+      0% { opacity: 0; transform: translateY(-30px) scale(0.9); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .toast-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .toast-content {
+      flex: 1;
+      line-height: 1.45;
+    }
+
+    .toast-title {
+      font-weight: 700;
+      display: block;
+      margin-bottom: 2px;
+      color: var(--accent-purple-solid);
+    }
+
+.alertly-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(6px);
+      z-index: 100001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .alertly-modal-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .alertly-modal {
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+      border-radius: 24px;
+      width: min(440px, 94vw);
+      padding: 24px;
+      box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6);
+      transform: scale(0.9) translateY(20px);
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .alertly-modal-overlay.open .alertly-modal {
+      transform: scale(1) translateY(0);
+    }
+
+    .modal-header h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .modal-header p {
+      margin: 0 0 20px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .modal-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 12px 14px;
+      color: #fff;
+      font-family: var(--font);
+      font-size: 14px;
+      margin-bottom: 20px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .modal-input:focus {
+      border-color: var(--accent-purple-solid);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .modal-btn {
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+
+    .modal-btn.cancel {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    .modal-btn.cancel:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .modal-btn.confirm {
+      background: linear-gradient(135deg, var(--accent-purple-solid), #6366f1);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .modal-btn.confirm:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
+    }
+
+    .moderation-link {
+      min-height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      background: rgba(99, 102, 241, 0.12);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 900px), (max-height: 760px) {
+      .sidebar {
+        left: 10px;
+        top: 10px;
+        width: min(260px, calc(100vw - 20px));
+        max-height: calc(100dvh - 150px);
+        padding: 10px 12px 14px;
+        border-radius: 18px;
+      }
+
+      .sidebar.collapsed {
+        width: 52px;
+        height: 52px;
+        min-height: 52px;
+        padding: 7px;
+      }
+
+      .sidebar-icon {
+        width: 36px;
+        height: 36px;
+      }
+
+      .sidebar-content {
+        gap: 9px;
+      }
+
+      .section {
+        padding: 10px;
+        gap: 9px;
+        border-radius: 14px;
+      }
+
+      .toggle-row {
+        padding: 8px 10px;
+      }
+
+      #miniMap {
+        height: 105px;
+      }
+
+      .input-wrap {
+        bottom: 28px;
+        width: min(680px, calc(100vw - 20px));
+        gap: 5px;
+      }
+
+      .chip-bar {
+        flex-wrap: nowrap;
+        justify-content: center;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 5px 4px;
+      }
+
+      .chip-bar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .chip {
+        flex: 0 0 auto;
+        padding: 5px 9px;
+        font-size: 11px;
+      }
+
+      .geometry-row {
+        display: grid;
+        grid-template-columns: repeat(3, max-content);
+        justify-content: center;
+        gap: 5px;
+        padding: 3px 0;
+      }
+
+      .geometry-btn {
+        padding: 5px 8px;
+        font-size: 11px;
+      }
+
+      .location-status {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 5px 8px;
+      }
+
+      .input-area {
+        gap: 7px;
+        padding: 4px 8px;
+      }
+
+      .input-area input[type=text] {
+        padding: 7px 3px;
+        font-size: 13px;
+      }
+
+      .upload-btn {
+        width: 31px;
+        height: 31px;
+      }
+
+      .send-btn {
+        height: 34px;
+        padding: 0 14px;
+        font-size: 12px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .input-wrap {
+        bottom: 22px;
+      }
+
+      .sidebar {
+        max-height: calc(100dvh - 180px);
+      }
+
+      #mapBtn {
+        top: 8px;
+        right: 8px;
+        width: 44px;
+        height: 44px;
+        padding: 5px;
+      }
+
+      #mapBtn .map-btn-icon {
+        width: 32px;
+        height: 32px;
+      }
+
+      #mapBtn .map-btn-label {
+        display: none;
+      }
+
+      .map-title {
+        top: 62px;
+      }
+
+      .map-title h1 {
+        font-size: 18px;
+      }
+
+      .geometry-row {
+        grid-template-columns: auto auto auto;
+      }
+
+      .location-status {
+        grid-column: 1 / -1;
+        text-align: center;
+      }
+
+      .file-name,
+      .file-multi {
+        max-width: 80px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-icon" id="sidebarToggle">⚙️</div>
+        <h2>Settings</h2>
+      </div>
+
+      <div class="sidebar-content">
+        <div class="section">
+          <div class="section-title">Map Style</div>
+
+          <div class="toggle-row">
+            <span>🛰️ Satellite View</span>
+            <label class="switch"><input type="checkbox" id="satelliteToggle" checked><span
+                class="slider"></span></label>
+          </div>
+
+          <div class="toggle-row">
+            <span>⛰️ Topographic / Terrain</span>
+            <label class="switch"><input type="checkbox" id="terrainToggle"><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Feed Rules</div>
+
+          <div class="control">
+            <label for="timeWindowSelect">Time window</label>
+            <div class="glass-select-wrapper">
+              <select id="timeWindowSelect" onclick="this.parentElement.classList.toggle('open')"
+                onblur="this.parentElement.classList.remove('open')" onchange="this.blur()">
+                <option value="1h">Last 1h</option>
+                <option value="6h" selected>Last 6h (Default)</option>
+                <option value="24h">Last 24h</option>
+                <option value="7d">Last 7d</option>
+                <option value="30d">Last 30d</option>
+                <option value="all">All time</option>
+              </select>
+            </div>
+            <small>Controls how far back reports stay visible</small>
+          </div>
+
+          <div class="toggle-row">
+            <span>Photos only</span>
+            <label class="switch" title="Only show reports that include images">
+              <input type="checkbox" id="onlyPhotosToggle" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Radius Tool</div>
+
+          <div class="control">
+            <label for="radiusAnchorSelect">Anchor</label>
+            <div class="glass-select-wrapper">
+              <select id="radiusAnchorSelect" onclick="this.parentElement.classList.toggle('open')"
+                onblur="this.parentElement.classList.remove('open')" onchange="this.blur()">
+                <option value="gps">Your location (GPS)</option>
+                <option value="custom">Custom pin (mini map)</option>
+                <option value="fixed">Tegucigalpa (Fixed)</option>
+                <option value="global" selected>Global (No filter)</option>
+              </select>
+            </div>
+            <small id="radiusHint">GPS asks once and keeps radius fixed.</small>
+          </div>
+
+          <div class="control" id="radiusControl">
+            <label>Radius: <span id="radiusValue">300</span> km</label>
+            <input type="range" id="radiusSlider" min="1" max="300" value="300" />
+          </div>
+
+          <div id="miniMap"></div>
+        </div>
+
+        <a class="moderation-link" id="staffAccessLink" href="/staff">🔐 Staff sign in</a>
+      </div>
+    </div>
+
+<a id="mapBtn" href="/">
+      <span class="map-btn-icon">🗺️</span>
+      <span class="map-btn-label">Emergency Map</span>
+    </a>
+
+<div class="main">
+      <div class="map-title">
+        <h1>Community Reports</h1>
+        <div id="currentType" class="subtitle">Selected: ❓ Other</div>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+
+<div class="input-wrap">
+    <div class="chip-bar" id="chipBar"></div>
+    <div class="geometry-row" aria-label="Report geometry">
+      <button class="geometry-btn active" id="gpsCircleBtn" type="button" data-geometry="GpsCircle">◎ GPS Circle</button>
+      <button class="geometry-btn" type="button" data-geometry="Polygon">⬟ Area</button>
+      <button class="geometry-btn" id="undoAreaBtn" type="button" disabled>↶ Undo</button>
+      <span id="locationStatus" hidden>GPS Circle: select to create a 1 km area</span>
+    </div>
+    <div class="input-area">
+      <label for="imageInput" class="upload-btn" title="Attach image">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 16.5V6.8C4 5.25 5.25 4 6.8 4h10.4C18.75 4 20 5.25 20 6.8v10.4c0 1.55-1.25 2.8-2.8 2.8H7.5"
+            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M7 14l2.2-2.2c.5-.5 1.3-.5 1.8 0L14 14l1.2-1.2c.5-.5 1.3-.5 1.8 0L20 15.8" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M8.2 9.2h.01" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" />
+        </svg>
+      </label>
+      <input type="file" id="imageInput" accept="image/*,video/*" multiple />
+
+      <div class="file-pill" id="filePill">
+        <img class="file-thumb" id="fileThumb" alt="" title="Preview attachments" />
+        <div class="file-name" id="fileName"></div>
+        <div class="file-multi" id="fileMulti"></div>
+        <button class="file-clear" id="fileClear" type="button" title="Remove">×</button>
+      </div>
+
+      <input type="text" id="reportInput" placeholder="Write a report…" />
+      <button class="send-btn" type="button" onclick="submitReport()">Send</button>
+    </div>
+  </div>
+
+  <div class="image-viewer" id="imageViewer" aria-hidden="true">
+    <div class="image-viewer-inner" role="dialog" aria-modal="true">
+      <div class="image-viewer-top">
+        <div class="image-viewer-name" id="imageViewerName"></div>
+        <button class="image-viewer-close" id="imageViewerClose" type="button">Close</button>
+      </div>
+      <div class="image-viewer-stage" id="imageViewerStage">
+        <div class="image-pan" id="imagePan">
+          <div class="image-frame" id="imageFrame">
+            <button class="image-close-x" id="imageViewerCloseX" type="button" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              </svg>
+            </button>
+            <img class="image-viewer-img" id="imageViewerImg" alt="" draggable="false" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alertly-toast-container" id="toastContainer"></div>
+
+  <div class="alertly-modal-overlay" id="modalOverlay">
+    <div class="alertly-modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Modal Title</h3>
+        <p id="modalDesc">Modal description text goes here.</p>
+      </div>
+      <input type="text" class="modal-input" id="modalInput" placeholder="Enter reason..." />
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="modalCancelBtn" type="button">Cancel</button>
+        <button class="modal-btn confirm" id="modalConfirmBtn" type="button">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const chipBar = document.getElementById("chipBar");
+    const currentType = document.getElementById("currentType");
+    const imageInput = document.getElementById("imageInput");
+    const filePill = document.getElementById("filePill");
+    const fileThumb = document.getElementById("fileThumb");
+    const fileName = document.getElementById("fileName");
+    const fileMulti = document.getElementById("fileMulti");
+    const fileClear = document.getElementById("fileClear");
+    const reportInput = document.getElementById("reportInput");
+    const gpsCircleBtn = document.getElementById("gpsCircleBtn");
+    const undoAreaBtn = document.getElementById("undoAreaBtn");
+    const geometryButtons = [...document.querySelectorAll("[data-geometry]")];
+    const locationStatus = document.getElementById("locationStatus");
+    const imageViewer = document.getElementById("imageViewer");
+    const imageViewerName = document.getElementById("imageViewerName");
+    const imageViewerClose = document.getElementById("imageViewerClose");
+    const imageViewerCloseX = document.getElementById("imageViewerCloseX");
+    const imageViewerStage = document.getElementById("imageViewerStage");
+    const imagePan = document.getElementById("imagePan");
+    const imageFrame = document.getElementById("imageFrame");
+    const imageViewerImg = document.getElementById("imageViewerImg");
+    const timeWindowSelect = document.getElementById("timeWindowSelect");
+    const timeWindowLabel = document.getElementById("timeWindowLabel");
+    const onlyPhotosToggle = document.getElementById("onlyPhotosToggle");
+    const radiusAnchorSelect = document.getElementById("radiusAnchorSelect");
+    const radiusHint = document.getElementById("radiusHint");
+    const radiusSlider = document.getElementById("radiusSlider");
+    const radiusValue = document.getElementById("radiusValue");
+
+let selectedType = "❓ Other";
+    let selectedRadius = 300;
+    let userCoords = null;
+    let mapMovedByUser = false;
+    let geometryMode = "GpsCircle";
+    let draftCoordinates = [];
+    let draftGeometryLayer = null;
+    let draftVertexLayer = null;
+    let gpsCenter = null;
+
+    const settings = {
+      timeWindow: "6h", verifyFilter: "both", onlyWithPhotos: false,
+      radiusAnchor: "global", radiusCenter: { lat: 14.0818, lng: -87.2068 }
+    };
+
+function showAlertlyToast(title, message, icon = '🛡️', duration = 5000) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'alertly-toast';
+      
+      const updateContent = (nT, nM, nI) => {
+        toast.innerHTML = `
+          <div class="toast-icon">${nI || icon}</div>
+          <div class="toast-content">
+            ${nT ? `<strong class="toast-title">${nT}</strong>` : ''}
+            <div class="toast-text">${nM}</div>
+          </div>
+        `;
+      };
+
+      updateContent(title, message, icon);
+      container.appendChild(toast);
+
+      let timer;
+      const fadeOut = () => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 400);
+      };
+
+      const resetTimer = (newDuration) => {
+        if (timer) clearTimeout(timer);
+        if (newDuration !== Infinity) {
+          timer = setTimeout(fadeOut, newDuration);
+        }
+      };
+
+      resetTimer(duration);
+      toast.onclick = fadeOut;
+
+      return {
+        update: (nT, nM, nI, nD = 5000) => {
+          updateContent(nT, nM, nI);
+          resetTimer(nD);
+        },
+        close: fadeOut
+      };
+    }
+
+    function showAlertlyPrompt(title, desc, placeholder = "Enter reason...", initialValue = "") {
+      return new Promise((resolve) => {
+        const overlay = document.getElementById('modalOverlay');
+        const titleEl = document.getElementById('modalTitle');
+        const descEl = document.getElementById('modalDesc');
+        const inputEl = document.getElementById('modalInput');
+        const cancelBtn = document.getElementById('modalCancelBtn');
+        const confirmBtn = document.getElementById('modalConfirmBtn');
+
+        titleEl.textContent = title;
+        descEl.textContent = desc;
+        inputEl.placeholder = placeholder;
+        inputEl.value = initialValue;
+
+        overlay.classList.add('open');
+        inputEl.focus();
+
+        const close = (val) => {
+          overlay.classList.remove('open');
+          cancelBtn.onclick = null;
+          confirmBtn.onclick = null;
+          inputEl.onkeydown = null;
+          resolve(val);
+        };
+
+        cancelBtn.onclick = () => close(null);
+        confirmBtn.onclick = () => close(inputEl.value.trim());
+        inputEl.onkeydown = (e) => {
+          if (e.key === 'Enter') close(inputEl.value.trim());
+          if (e.key === 'Escape') close(null);
+        };
+      });
+    }
+
+const WORLD_BOUNDS = L.latLngBounds([[-85.0511, -180], [85.0511, 180]]);
+const map = L.map("map", {
+      zoomControl: false,
+      zoomAnimation: true,
+      zoomAnimationThreshold: 8,
+      fadeAnimation: true,
+      markerZoomAnimation: true,
+      maxBounds: WORLD_BOUNDS,
+      maxBoundsViscosity: 1,
+      worldCopyJump: false
+    }).setView([14.0818, -87.2068], 6);
+    function enforceScreenAwareMinimumZoom() {
+      const size = map.getSize();
+      const minimumZoom = Math.max(2, Math.ceil(Math.log2(Math.max(size.x, size.y) / 256)));
+      map.setMinZoom(minimumZoom);
+      if (map.getZoom() < minimumZoom) map.setZoom(minimumZoom);
+      map.panInsideBounds(WORLD_BOUNDS, { animate: false });
+    }
+    map.whenReady(enforceScreenAwareMinimumZoom);
+    map.on("resize", enforceScreenAwareMinimumZoom);
+    map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+    const esriImageryCredit = '<details class="map-credit-details"><summary>Powered by Esri + data</summary><span class="map-credit-full">Sources: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, and the GIS User Community.</span></details>';
+    const esriTopoCredit = '<details class="map-credit-details"><summary>Powered by Esri + data</summary><span class="map-credit-full">Sources: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community.</span></details>';
+    const baseLayers = {
+      osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        noWrap: true,
+        bounds: WORLD_BOUNDS
+      }),
+      satellite: L.layerGroup([
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+          attribution: esriImageryCredit,
+          noWrap: true,
+          bounds: WORLD_BOUNDS
+        }),
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+          attribution: null,
+          noWrap: true,
+          bounds: WORLD_BOUNDS
+        })
+      ]),
+      terrain: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+        attribution: esriTopoCredit,
+        noWrap: true,
+        bounds: WORLD_BOUNDS
+      })
+    };
+    let currentBaseLayer = baseLayers.satellite;
+    currentBaseLayer.addTo(map);
+
+    const satToggle = document.getElementById("satelliteToggle");
+    const terToggle = document.getElementById("terrainToggle");
+
+    function syncBaseMaps(activeId) {
+      if (currentBaseLayer) map.removeLayer(currentBaseLayer);
+
+      if (activeId === "satellite") {
+        currentBaseLayer = baseLayers.satellite;
+        terToggle.checked = false;
+        satToggle.checked = true;
+      } else if (activeId === "terrain") {
+        currentBaseLayer = baseLayers.terrain;
+        satToggle.checked = false;
+        terToggle.checked = true;
+      } else {
+        currentBaseLayer = baseLayers.osm;
+        satToggle.checked = false;
+        terToggle.checked = false;
+      }
+
+      currentBaseLayer.addTo(map);
+      currentBaseLayer.bringToBack();
+    }
+
+    satToggle.addEventListener("change", (e) => {
+      syncBaseMaps(e.target.checked ? "satellite" : "osm");
+    });
+
+    terToggle.addEventListener("change", (e) => {
+      syncBaseMaps(e.target.checked ? "terrain" : "osm");
+    });
+
+    map.on('movestart', () => { mapMovedByUser = true; });
+
+    let miniMap = null, miniMapInitialized = false, miniRadiusCircle = null, miniCustomMarker = null;
+
+const TYPES = ["🔥 Fire", "🌊 Flood", "🌋 Volcanic Activity", "⛰️ Landslide", "🫨 Earthquake", "❓ Other"];
+    const HAZARD_COLORS = {
+      "🔥": "#ef4444",
+      "🌊": "#0ea5e9",
+      "🌋": "#b91c1c",
+      "⛰️": "#a16207",
+      "🫨": "#71717a",
+      "❓": "#6366f1"
+    };
+    function getHazardColor(type = selectedType) {
+      const emoji = (type || "").split(" ")[0];
+      return HAZARD_COLORS[emoji] || "#6366f1";
+    }
+
+    function renderChips() {
+      chipBar.innerHTML = "";
+      for (const t of TYPES) {
+        const btn = document.createElement("div");
+        btn.className = "chip" + (t === selectedType ? " active" : "");
+        btn.textContent = t;
+        btn.addEventListener("click", () => selectType(t));
+        chipBar.appendChild(btn);
+      }
+    }
+    renderChips();
+
+let selectedFiles = [], selectedPreviewUrls = [];
+
+    imageInput.addEventListener("change", () => {
+      const nf = imageInput.files ? Array.from(imageInput.files) : [];
+      if (!nf.length) return;
+      setSelectedFiles(selectedFiles.concat(nf));
+      imageInput.value = "";
+    });
+    
+    const sidebar = document.getElementById("sidebar");
+    const sidebarToggle = document.getElementById("sidebarToggle");
+    const compactLayout = window.matchMedia("(max-width: 900px), (max-height: 760px)");
+
+    function applyResponsiveSidebar(event = compactLayout) {
+      sidebar.classList.toggle("collapsed", event.matches);
+      sidebar.style.top = "";
+      sidebar.style.transform = "";
+    }
+
+    applyResponsiveSidebar();
+    compactLayout.addEventListener?.("change", applyResponsiveSidebar);
+
+    sidebarToggle.addEventListener("click", () => {
+      const isCollapsing = !sidebar.classList.contains("collapsed");
+      if (isCollapsing) {
+        const rect = sidebar.getBoundingClientRect();
+        sidebar.style.top = rect.top + "px";
+        sidebar.style.transform = "none";
+      } else {
+        sidebar.style.top = "";
+        sidebar.style.transform = "";
+      }
+      sidebar.classList.toggle("collapsed");
+    });
+
+    chipBar.addEventListener("wheel", e => { e.preventDefault(); chipBar.scrollLeft += e.deltaY });
+
+    fileClear.addEventListener("click", e => { e.stopPropagation(); setSelectedFiles([]) });
+
+    const truncateTo5 = n => { const b = String(n || ""); return b.length <= 5 ? b : b.slice(0, 5) + "…" };
+    const getSelectedPreviewImages = () => selectedFiles.map((f, i) => ({ url: selectedPreviewUrls[i], name: f.name })).filter(x => !!x.url);
+    const openPreviewViewerAt = idx => { const imgs = getSelectedPreviewImages(); if (imgs.length) openImageViewer(imgs, idx) };
+
+    function setSelectedFiles(files) {
+      selectedFiles = files;
+      for (const u of selectedPreviewUrls) URL.revokeObjectURL(u);
+      selectedPreviewUrls = [];
+      if (!files.length) {
+        filePill.style.display = "none";
+        fileThumb.removeAttribute("src"); fileThumb.alt = "";
+        fileName.textContent = ""; fileName.style.display = "";
+        fileMulti.innerHTML = ""; fileMulti.style.display = "none";
+        fileThumb.onclick = null; return;
+      }
+      selectedPreviewUrls = files.map(f => URL.createObjectURL(f));
+      filePill.style.display = "inline-flex";
+      fileThumb.src = selectedPreviewUrls[0]; fileThumb.alt = files[0].name;
+      if (files.length === 1) {
+        fileMulti.innerHTML = ""; fileMulti.style.display = "none";
+        fileName.style.display = ""; fileName.textContent = truncateTo5(files[0].name);
+      } else {
+        fileName.textContent = ""; fileName.style.display = "none";
+        const restCount = files.length - 1, maxT = 3;
+        const show = Math.min(restCount, maxT), rem = restCount - show;
+        let html = "";
+        for (let i = 0; i < show; i++) { const idx = 1 + i; html += `<img src="${escapeHtml(selectedPreviewUrls[idx])}" alt="${escapeHtml(files[idx].name)}" data-preview-idx="${idx}">`; }
+        if (rem > 0) html += `<div class="file-more" data-preview-idx="0">+${rem}</div>`;
+        fileMulti.innerHTML = html; fileMulti.style.display = "inline-flex";
+      }
+      fileThumb.onclick = () => openPreviewViewerAt(0);
+      fileMulti.querySelectorAll("[data-preview-idx]").forEach(el => {
+        el.onclick = e => { e.stopPropagation(); openPreviewViewerAt(Number(el.getAttribute("data-preview-idx") || "0")) };
+      });
+    }
+
+let viewerImages = [], viewerIndex = 0, viewerZoomed = false;
+    const CLICK_ZOOM = 2.0, INERTIA_ENABLED = true, INERTIA_MIN_V = 6, INERTIA_MAX_V = 2600;
+    const SOFT_CLAMP = 0.32, SOFT_CLAMP_TARGET = 0.18, PLAN_PAN_K_MULT = 1.35;
+    const baseSize = { w: 0, h: 0 };
+    const view = { scale: 1, targetScale: 1, panX: 0, panY: 0, targetPanX: 0, targetPanY: 0, raf: 0, k: 0.08 };
+    const drag = { active: false, pointerId: null, startX: 0, startY: 0, baseX: 0, baseY: 0, moved: false, lastX: 0, lastY: 0, lastT: 0, vx: 0, vy: 0 };
+    const inertia = { raf: 0, vx: 0, vy: 0, lastT: 0 };
+    const zoomOutPlan = { active: false, startScale: 1, startPanX: 0, startPanY: 0 };
+    let pendingOriginReset = false;
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    function measureBaseSize() {
+      const prev = view.scale, prevT = view.targetScale;
+      view.scale = 1; view.targetScale = 1; imageFrame.style.transform = "scale(1)";
+      const r = imageFrame.getBoundingClientRect();
+      baseSize.w = Math.max(0, r.width); baseSize.h = Math.max(0, r.height);
+      view.scale = prev; view.targetScale = prevT;
+      imageFrame.style.transform = `scale(${view.scale.toFixed(5)})`;
+    }
+    function getPanLimits(s) {
+      const st = imageViewerStage.getBoundingClientRect();
+      return { maxX: Math.max(0, (baseSize.w * s - st.width) / 2), maxY: Math.max(0, (baseSize.h * s - st.height) / 2) };
+    }
+    function clampPanForScale(s, px, py) {
+      if (!baseSize.w || !baseSize.h) return { x: px, y: py };
+      const { maxX, maxY } = getPanLimits(s);
+      return { x: clamp(px, -maxX, maxX), y: clamp(py, -maxY, maxY) };
+    }
+    function applyView() {
+      imageFrame.style.transform = `scale(${view.scale.toFixed(5)})`;
+      imagePan.style.transform = `translate3d(${view.panX.toFixed(2)}px,${view.panY.toFixed(2)}px,0)`;
+      imageFrame.classList.toggle("zoomed", view.scale > 1.01);
+    }
+    function stopInertia() { if (inertia.raf) cancelAnimationFrame(inertia.raf); inertia.raf = 0; inertia.vx = 0; inertia.vy = 0; inertia.lastT = 0 }
+    function stopZoomOutPlan() { zoomOutPlan.active = false }
+
+    function startAnim() {
+      if (view.raf) return;
+      const tick = () => {
+        const k = view.k;
+        view.scale += (view.targetScale - view.scale) * k;
+        if (zoomOutPlan.active) {
+          const denom = Math.max(0.0001, zoomOutPlan.startScale - 1);
+          const t = clamp((view.scale - 1) / denom, 0, 1);
+          const dx = zoomOutPlan.startPanX * t, dy = zoomOutPlan.startPanY * t;
+          view.targetPanX = dx; view.targetPanY = dy;
+          const kk = Math.min(0.25, k * PLAN_PAN_K_MULT);
+          view.panX += (dx - view.panX) * kk; view.panY += (dy - view.panY) * kk;
+          const c = clampPanForScale(view.scale, view.panX, view.panY);
+          view.panX = c.x; view.panY = c.y;
+        } else {
+          view.panX += (view.targetPanX - view.panX) * k;
+          view.panY += (view.targetPanY - view.panY) * k;
+          const cN = clampPanForScale(view.scale, view.panX, view.panY);
+          view.panX += (cN.x - view.panX) * SOFT_CLAMP; view.panY += (cN.y - view.panY) * SOFT_CLAMP;
+          const cT = clampPanForScale(view.targetScale, view.targetPanX, view.targetPanY);
+          view.targetPanX += (cT.x - view.targetPanX) * SOFT_CLAMP_TARGET;
+          view.targetPanY += (cT.y - view.targetPanY) * SOFT_CLAMP_TARGET;
+        }
+        applyView();
+        const done = Math.abs(view.targetScale - view.scale) < 0.0009 && Math.abs(view.targetPanX - view.panX) < 0.12 && Math.abs(view.targetPanY - view.panY) < 0.12;
+        if (done) {
+          view.scale = view.targetScale; view.panX = view.targetPanX; view.panY = view.targetPanY;
+          view.raf = 0; applyView();
+          if (pendingOriginReset && view.scale <= 1.001) { imageFrame.style.transformOrigin = "center center"; pendingOriginReset = false }
+          if (zoomOutPlan.active && view.scale <= 1.001) stopZoomOutPlan();
+          return;
+        }
+        view.raf = requestAnimationFrame(tick);
+      };
+      view.raf = requestAnimationFrame(tick);
+    }
+    function setTargets(s, px, py, opts = {}) {
+      view.k = typeof opts.k === "number" ? opts.k : 0.08;
+      view.targetScale = clamp(s, 1, 8); view.targetPanX = px; view.targetPanY = py; startAnim();
+    }
+    function setPanInstant(px, py) {
+      const c = clampPanForScale(view.targetScale, px, py);
+      if (view.raf) { cancelAnimationFrame(view.raf); view.raf = 0 }
+      view.targetPanX = c.x; view.targetPanY = c.y; view.panX = c.x; view.panY = c.y; applyView();
+    }
+    function setOriginFromClientPoint(cx, cy) {
+      const r = imageFrame.getBoundingClientRect();
+      const x = clamp((cx - r.left) / r.width, 0, 1), y = clamp((cy - r.top) / r.height, 0, 1);
+      imageFrame.style.transformOrigin = `${(x * 100).toFixed(2)}% ${(y * 100).toFixed(2)}%`;
+    }
+    function zoomInDirect(cx, cy, ns) { stopInertia(); stopZoomOutPlan(); pendingOriginReset = false; setOriginFromClientPoint(cx, cy); viewerZoomed = true; setTargets(ns, view.targetPanX, view.targetPanY, { k: 0.07 }) }
+    function zoomOutReset() {
+      stopInertia(); viewerZoomed = false; pendingOriginReset = true;
+      zoomOutPlan.active = true; zoomOutPlan.startScale = Math.max(1, view.targetScale);
+      zoomOutPlan.startPanX = view.targetPanX; zoomOutPlan.startPanY = view.targetPanY;
+      setTargets(1, view.targetPanX, view.targetPanY, { k: 0.07 });
+    }
+    function openImageViewer(images, startIndex) {
+      if (!images || !images.length) return;
+      viewerImages = images; viewerIndex = clampIndex(startIndex, images.length);
+      renderViewer();
+      stopInertia(); stopZoomOutPlan(); pendingOriginReset = false;
+      if (view.raf) { cancelAnimationFrame(view.raf); view.raf = 0 }
+      view.scale = 1; view.targetScale = 1; view.panX = 0; view.panY = 0; view.targetPanX = 0; view.targetPanY = 0;
+      viewerZoomed = false; imageFrame.style.transformOrigin = "center center"; applyView();
+      imageViewer.classList.add("open"); imageViewer.setAttribute("aria-hidden", "false");
+      requestAnimationFrame(() => { measureBaseSize(); setTargets(1, 0, 0, { k: 0.08 }) });
+    }
+    function closeImageViewer() {
+      stopInertia(); stopZoomOutPlan(); pendingOriginReset = false;
+      imageViewer.classList.remove("open"); imageViewer.setAttribute("aria-hidden", "true");
+      imageViewerImg.removeAttribute("src"); imageViewerImg.alt = ""; imageViewerName.textContent = "";
+      viewerImages = []; viewerIndex = 0; drag.active = false; imageFrame.style.transformOrigin = "center center";
+      setTargets(1, 0, 0, { k: 0.10 });
+    }
+    function renderViewer() { const item = viewerImages[viewerIndex]; if (!item) return; imageViewerImg.src = item.url; imageViewerImg.alt = item.name || "Image"; imageViewerName.textContent = "" }
+    function clampIndex(i, len) { return len <= 0 ? 0 : i < 0 ? 0 : i >= len ? len - 1 : i }
+
+    window.addEventListener("resize", () => {
+      if (!imageViewer.classList.contains("open")) return;
+      stopInertia(); requestAnimationFrame(() => { measureBaseSize(); setTargets(view.targetScale, view.targetPanX, view.targetPanY, { k: 0.08 }) });
+    });
+    imageViewerImg.addEventListener("load", () => {
+      if (!imageViewer.classList.contains("open")) return;
+      stopInertia(); requestAnimationFrame(() => { measureBaseSize(); setTargets(view.targetScale, view.targetPanX, view.targetPanY, { k: 0.08 }) });
+    });
+    imageViewerImg.addEventListener("dragstart", e => e.preventDefault());
+
+    function startInertiaFromVelocity(vx, vy) {
+      if (!INERTIA_ENABLED || view.targetScale <= 1.01) return;
+      stopInertia();
+      inertia.vx = clamp(vx, -INERTIA_MAX_V, INERTIA_MAX_V); inertia.vy = clamp(vy, -INERTIA_MAX_V, INERTIA_MAX_V);
+      inertia.lastT = performance.now();
+      const step = t => {
+        const dt = Math.min(0.032, Math.max(0.008, (t - inertia.lastT) / 1000)); inertia.lastT = t;
+        const speed = Math.hypot(inertia.vx, inertia.vy); if (speed < INERTIA_MIN_V) { stopInertia(); return }
+        let nx = view.targetPanX + inertia.vx * dt, ny = view.targetPanY + inertia.vy * dt;
+        const before = { x: nx, y: ny }; const c = clampPanForScale(view.targetScale, nx, ny);
+        nx = c.x; ny = c.y;
+        if (before.x !== nx) inertia.vx = -inertia.vx * 0.35; if (before.y !== ny) inertia.vy = -inertia.vy * 0.35;
+        inertia.vx *= Math.pow(0.92, dt * 60); inertia.vy *= Math.pow(0.92, dt * 60);
+        setPanInstant(nx, ny); inertia.raf = requestAnimationFrame(step);
+      };
+      inertia.raf = requestAnimationFrame(step);
+    }
+
+    imageFrame.addEventListener("pointerdown", e => {
+      if (!imageViewer.classList.contains("open")) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      stopInertia(); stopZoomOutPlan();
+      drag.pointerId = e.pointerId; drag.startX = e.clientX; drag.startY = e.clientY;
+      drag.baseX = view.targetPanX; drag.baseY = view.targetPanY; drag.moved = false;
+      drag.lastX = e.clientX; drag.lastY = e.clientY; drag.lastT = performance.now();
+      drag.vx = 0; drag.vy = 0; drag.active = view.targetScale > 1.01;
+      imageFrame.setPointerCapture(e.pointerId);
+      if (drag.active) imageFrame.classList.add("dragging");
+    });
+    imageFrame.addEventListener("pointermove", e => {
+      if (drag.pointerId !== e.pointerId || !drag.active) return;
+      const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+      if (Math.hypot(dx, dy) > 2) drag.moved = true;
+      const now = performance.now(), dt = Math.max(1, now - drag.lastT);
+      const ivx = ((e.clientX - drag.lastX) / dt) * 1000 * 0.65, ivy = ((e.clientY - drag.lastY) / dt) * 1000 * 0.65;
+      const a = 0.22; drag.vx = drag.vx * (1 - a) + ivx * a; drag.vy = drag.vy * (1 - a) + ivy * a;
+      drag.lastX = e.clientX; drag.lastY = e.clientY; drag.lastT = now;
+      if (drag.moved) setPanInstant(drag.baseX + dx * 0.65, drag.baseY + dy * 0.65);
+    });
+    imageFrame.addEventListener("pointerup", e => {
+      if (drag.pointerId !== e.pointerId) return;
+      const wasDrag = drag.active && drag.moved;
+      drag.active = false; drag.pointerId = null; imageFrame.classList.remove("dragging");
+      if (wasDrag) { startInertiaFromVelocity(drag.vx, drag.vy); return }
+      if (!viewerZoomed) zoomInDirect(e.clientX, e.clientY, CLICK_ZOOM); else zoomOutReset();
+    });
+    imageFrame.addEventListener("pointercancel", () => { drag.active = false; drag.pointerId = null; imageFrame.classList.remove("dragging") });
+    imageViewerStage.addEventListener("wheel", e => {
+      if (!imageViewer.classList.contains("open")) return;
+      e.preventDefault(); stopInertia();
+      const step = 0.06;
+      if (e.deltaY < 0) { stopZoomOutPlan(); zoomInDirect(e.clientX, e.clientY, view.targetScale + step) }
+      else {
+        const next = Math.max(1, view.targetScale - step);
+        if (next <= 1.001) zoomOutReset();
+        else { stopZoomOutPlan(); const c = clampPanForScale(next, view.targetPanX, view.targetPanY); setTargets(next, c.x, c.y, { k: 0.07 }); viewerZoomed = next > 1.01 }
+      }
+    }, { passive: false });
+
+    imageViewer.addEventListener("click", e => { if (e.target === imageViewer) closeImageViewer() });
+    imageViewerClose.addEventListener("click", closeImageViewer);
+    imageViewerCloseX.addEventListener("click", e => { e.stopPropagation(); closeImageViewer() });
+    imageViewerCloseX.addEventListener("pointerdown", e => e.stopPropagation());
+    imageViewerCloseX.addEventListener("pointerup", e => e.stopPropagation());
+    document.addEventListener("keydown", e => { if (imageViewer.classList.contains("open") && e.key === "Escape") closeImageViewer() });
+
+function timeWindowToMs(v) {
+      return { h1: 3600000, h6: 21600000, h24: 86400000, d7: 604800000, d30: 2592000000, all: Infinity }[v.replace(/\s/g, "")] || ({
+        "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000, "30d": 2592000000, "all": Infinity
+      }[v]) || 86400000;
+    }
+    timeWindowSelect.addEventListener("change", () => {
+      settings.timeWindow = timeWindowSelect.value;
+      refreshReportVisibility();
+    });
+    onlyPhotosToggle.addEventListener("change", () => { settings.onlyWithPhotos = !!onlyPhotosToggle.checked; refreshReportVisibility() });
+    radiusAnchorSelect.addEventListener("change", () => { settings.radiusAnchor = radiusAnchorSelect.value; updateRadiusHint(); applyAnchorMode() });
+    radiusSlider.addEventListener("input", () => {
+      selectedRadius = Number(radiusSlider.value);
+      radiusValue.innerText = selectedRadius;
+      syncMiniRadiusUI(true);
+      refreshReportVisibility();
+    });
+
+    function updateRadiusHint() {
+      const isGlobal = settings.radiusAnchor === "global";
+      document.getElementById("miniMap").style.display = isGlobal ? "none" : "block";
+      document.getElementById("radiusControl").style.display = isGlobal ? "none" : "block";
+      radiusHint.style.display = isGlobal ? "none" : "block";
+      radiusHint.textContent = settings.radiusAnchor === "gps" ? "GPS asks once and keeps radius fixed."
+        : settings.radiusAnchor === "custom" ? "Click anywhere on the map to drop your radius pin."
+          : isGlobal ? "" : "Fixed uses a static Honduras center.";
+    }
+    function initMiniMapOnce() {
+      if (miniMapInitialized) return; miniMapInitialized = true;
+      miniMap = L.map("miniMap", { zoomControl: false, attributionControl: false, dragging: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true, keyboard: false, tap: true })
+        .setView([settings.radiusCenter.lat, settings.radiusCenter.lng], 12);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(miniMap);
+      miniMap.on("click", e => { if (settings.radiusAnchor !== "custom") return; settings.radiusCenter = { lat: e.latlng.lat, lng: e.latlng.lng }; syncMiniRadiusUI(true); refreshReportVisibility() });
+      requestAnimationFrame(() => miniMap.invalidateSize(true));
+      setTimeout(() => miniMap.invalidateSize(true), 120);
+    }
+    const getAccent = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b82f6";
+    const createAlertlyPinIconMini = () => L.divIcon({ className: "", html: '<div class="alertly-pin mini"></div>', iconSize: [20, 20], iconAnchor: [10, 20] });
+
+    let autoZoomTimer = null;
+    let isAutoZooming = false;
+
+    function cancelAutoZoom() {
+      if (autoZoomTimer) {
+        clearTimeout(autoZoomTimer);
+        autoZoomTimer = null;
+      }
+      if (isAutoZooming) {
+        isAutoZooming = false;
+        map.stop();
+        if (draftGeometryLayer && typeof draftGeometryLayer.setStyle === "function") {
+          const activeColor = getHazardColor();
+          draftGeometryLayer.setStyle({ opacity: 1, fillOpacity: 0.22, color: activeColor, fillColor: activeColor });
+        }
+      }
+    }
+
+    map.on("dragstart movestart zoomstart", e => {
+      // If user directly moves/drags/zooms the map, cancel auto zoom and let user stay in place
+      if (e?.originalEvent || !isAutoZooming) {
+        mapMovedByUser = true;
+        cancelAutoZoom();
+      }
+    });
+
+    function onLocationFound(uLat, uLng) {
+      if (!Number.isFinite(uLat) || !Number.isFinite(uLng)) return;
+
+      if (geometryMode === "GpsCircle") setGpsCircleGeometry({ lat: uLat, lng: uLng });
+      if (settings.radiusAnchor === "gps") {
+        settings.radiusCenter = { lat: uLat, lng: uLng };
+        syncMiniRadiusUI(true); refreshReportVisibility();
+      }
+
+      // Auto zoom is strictly tied to GPS location finding
+      cancelAutoZoom();
+      if (geometryMode === "GpsCircle" && !mapMovedByUser) {
+        autoZoomTimer = setTimeout(() => {
+          if (mapMovedByUser || geometryMode !== "GpsCircle") return;
+          isAutoZooming = true;
+          if (draftGeometryLayer && typeof draftGeometryLayer.setStyle === "function") {
+            draftGeometryLayer.setStyle({ opacity: 0, fillOpacity: 0 });
+          }
+          const onFlyEnd = () => {
+            map.off("moveend", onFlyEnd);
+            isAutoZooming = false;
+            if (geometryMode === "GpsCircle" && draftGeometryLayer && typeof draftGeometryLayer.setStyle === "function") {
+              const activeColor = getHazardColor();
+              draftGeometryLayer.setStyle({ opacity: 1, fillOpacity: 0.22, color: activeColor, fillColor: activeColor });
+            }
+          };
+          map.once("moveend", onFlyEnd);
+          map.flyTo([uLat, uLng], Math.max(map.getZoom(), 12), {
+            animate: true,
+            duration: 2.5,
+            easeLinearity: 0.15,
+            noMoveStart: true
+          });
+          autoZoomTimer = null;
+        }, 3000);
+      }
+    }
+
+    function requestUserLocationForRadius() {
+      cancelAutoZoom();
+      locationStatus.textContent = "Finding GPS for a 1 km report area…";
+      if (!navigator.geolocation) {
+        cancelAutoZoom();
+        locationStatus.textContent = "GPS unavailable — use Draw Area instead";
+        if (settings.radiusAnchor === "gps") { syncMiniRadiusUI(true); refreshReportVisibility() }
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => onLocationFound(pos.coords.latitude, pos.coords.longitude),
+        err => {
+          console.warn("High-accuracy GPS failed, trying fallback:", err?.message);
+          navigator.geolocation.getCurrentPosition(
+            pos => onLocationFound(pos.coords.latitude, pos.coords.longitude),
+            err2 => {
+              console.warn("GPS error:", err2?.message);
+              cancelAutoZoom();
+              if (!userCoords) locationStatus.textContent = "GPS unavailable — use Draw Area instead";
+              if (settings.radiusAnchor === "gps") { syncMiniRadiusUI(true); refreshReportVisibility(); }
+            },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+      );
+    }
+    function applyAnchorMode() {
+      initMiniMapOnce();
+      if (settings.radiusAnchor === "global") { syncMiniRadiusUI(true); refreshReportVisibility(); return }
+      if (settings.radiusAnchor === "fixed") { settings.radiusCenter = { lat: 14.0818, lng: -87.2068 }; miniMap.setView([settings.radiusCenter.lat, settings.radiusCenter.lng], 13); syncMiniRadiusUI(true); refreshReportVisibility(); return }
+      if (settings.radiusAnchor === "gps") { requestUserLocationForRadius(); return }
+      syncMiniRadiusUI(true); refreshReportVisibility();
+    }
+    function clearMiniRadiusLayers() {
+      if (!miniMap) return;
+      if (miniRadiusCircle) { miniMap.removeLayer(miniRadiusCircle); miniRadiusCircle = null }
+      if (miniCustomMarker) { miniMap.removeLayer(miniCustomMarker); miniCustomMarker = null }
+    }
+    function syncMiniRadiusUI(keepView = false) {
+      initMiniMapOnce(); clearMiniRadiusLayers();
+      const c = settings.radiusCenter, acc = getAccent();
+      if (!keepView) miniMap.setView([c.lat, c.lng], miniMap.getZoom());
+      miniRadiusCircle = L.circle([c.lat, c.lng], { radius: selectedRadius * 1000, color: acc, weight: 2, opacity: .45, fillColor: acc, fillOpacity: .1 }).addTo(miniMap);
+      if (settings.radiusAnchor === "custom") miniCustomMarker = L.marker([c.lat, c.lng], { icon: createAlertlyPinIconMini(), keyboard: false }).addTo(miniMap);
+      requestAnimationFrame(() => miniMap.invalidateSize(true));
+    }
+
+const reportStore = [];
+    const withinRadius = (lat, lng) => {
+      if (settings.radiusAnchor === "global") return true;
+      return map.distance([lat, lng], [settings.radiusCenter.lat, settings.radiusCenter.lng]) <= selectedRadius * 1000;
+    };
+    const passesTimeWindow = t => { const ms = timeWindowToMs(settings.timeWindow); return ms === Infinity || (Date.now() - t) <= ms };
+    const passesPhotoRule = imgs => !settings.onlyWithPhotos || (Array.isArray(imgs) && imgs.length > 0);
+
+    function refreshReportVisibility() {
+      const now = Date.now();
+      for (const e of reportStore) {
+        const d = e.data;
+        if (d.isRemoved) {
+          if (map.hasLayer(e.marker)) map.removeLayer(e.marker);
+          continue;
+        }
+        const passesBasics = (now - d.createdAt) < 10000 || (passesTimeWindow(d.createdAt) && withinRadius(d.lat, d.lng));
+        const vis = passesBasics && passesPhotoRule(d.images);
+
+        if (typeof e.marker.setStyle === "function") {
+          e.marker.setStyle({ opacity: vis ? 1 : 0, fillOpacity: vis && d.geometry?.type === "Polygon" ? .24 : 0 });
+        } else {
+          e.marker.setOpacity(vis ? 1 : 0);
+        }
+        if (e.marker.getElement()) {
+          e.marker.getElement().style.pointerEvents = vis ? "auto" : "none";
+        }
+      }
+    }
+
+let pendingReport = null, pendingMarker = null;
+
+    function clearDraftGeometry() {
+      cancelAutoZoom();
+      draftCoordinates = [];
+      userCoords = null;
+      if (draftGeometryLayer) map.removeLayer(draftGeometryLayer);
+      if (draftVertexLayer) map.removeLayer(draftVertexLayer);
+      draftGeometryLayer = null;
+      draftVertexLayer = null;
+      gpsCenter = null;
+      undoAreaBtn.disabled = true;
+    }
+
+    function selectGeometryMode(mode) {
+      geometryMode = mode;
+      clearDraftGeometry();
+      geometryButtons.forEach(button => button.classList.toggle("active", button.dataset.geometry === mode));
+      locationStatus.textContent = mode === "GpsCircle"
+        ? "GPS Circle: locating device for a 1 km area…"
+        : "Area: click at least 3 points around the affected zone";
+    }
+
+    function circleCoordinates(lat, lng, radiusKm = 1, segments = 36) {
+      const ring = [];
+      const latRadians = lat * Math.PI / 180;
+      for (let index = 0; index < segments; index++) {
+        const angle = index * Math.PI * 2 / segments;
+        const latitude = lat + (radiusKm / 111.32) * Math.cos(angle);
+        const longitude = lng + (radiusKm / (111.32 * Math.cos(latRadians))) * Math.sin(angle);
+        ring.push([longitude, latitude]);
+      }
+      ring.push(ring[0]);
+      return ring;
+    }
+    window.AlertlyGeometry = Object.freeze({ circleCoordinates });
+
+    function setGpsCircleGeometry(coords) {
+      gpsCenter = { lat: Number(coords.lat), lng: Number(coords.lng) };
+      userCoords = gpsCenter;
+      draftCoordinates = circleCoordinates(gpsCenter.lat, gpsCenter.lng);
+      updateDraftGeometry();
+      locationStatus.textContent = `GPS area ready: 1 km around ${gpsCenter.lat.toFixed(4)}, ${gpsCenter.lng.toFixed(4)} — ready to Send`;
+    }
+
+  let areaOrder = [], areaOrderSource = null, areaPrevious = [];
+  function expandingBoundary(points) {
+    const project = p => map.latLngToContainerPoint([p[1], p[0]]);
+    const segmentDistance = (p, a, b) => {
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const t = Math.max(0, Math.min(1, ((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy || 1)));
+      return Math.hypot(p.x-a.x-t*dx, p.y-a.y-t*dy);
+    };
+    if (areaOrderSource !== points || areaOrder.length !== points.length) {
+      const center = points.reduce((s,p) => [s[0]+p[0]/points.length,s[1]+p[1]/points.length], [0,0]);
+      areaOrder = points.map((_,i)=>i).sort((a,b)=>Math.atan2(points[a][1]-center[1],points[a][0]-center[0])-Math.atan2(points[b][1]-center[1],points[b][0]-center[0]));
+      areaOrderSource = points;
+    } else if (points.length > 3) {
+      const moving = points.findIndex((p,i)=>p[0]!==areaPrevious[i]?.[0] || p[1]!==areaPrevious[i]?.[1]);
+      if (moving >= 0) {
+        const position = areaOrder.indexOf(moving);
+        const remaining = areaOrder.filter(i=>i!==moving);
+        const currentEdge = (position+remaining.length-1)%remaining.length;
+        const p = project(points[moving]);
+        const distances = remaining.map((id,i)=>segmentDistance(p,project(points[id]),project(points[remaining[(i+1)%remaining.length]])));
+        let best = currentEdge;
+        for (let i=0;i<distances.length;i++) if (distances[i]<distances[best]) best=i;
+        if (distances[best]+8 < distances[currentEdge]) {
+          remaining.splice(best+1,0,moving);
+          areaOrder = remaining;
+        }
+      }
+    }
+    areaPrevious = points.map(p=>[...p]);
+    return areaOrder.map(i=>points[i]);
+  }
+    window.AlertlyGeometry = Object.freeze({ ...window.AlertlyGeometry, expandingBoundary });
+
+    function updateDraftBoundary() {
+      map.getContainer().dataset.boundaryRevision = String(Number(map.getContainer().dataset.boundaryRevision || 0) + 1);
+      const boundary = geometryMode === "Polygon" ? expandingBoundary(draftCoordinates) : draftCoordinates;
+      const latLngs = boundary.map(([lng, lat]) => [lat, lng]);
+      const wantsPolygon = (geometryMode === "Polygon" || geometryMode === "GpsCircle") && latLngs.length >= 3;
+      const existingMatches = draftGeometryLayer && (wantsPolygon ? draftGeometryLayer instanceof L.Polygon : !(draftGeometryLayer instanceof L.Polygon));
+      const activeColor = getHazardColor();
+      if (existingMatches) {
+        draftGeometryLayer.setLatLngs(latLngs);
+        if (typeof draftGeometryLayer.setStyle === "function") {
+          draftGeometryLayer.setStyle(wantsPolygon
+            ? { color: activeColor, fillColor: activeColor, weight: 3, fillOpacity: .22 }
+            : { color: activeColor, weight: 4, dashArray: "7 7", lineCap: "round" });
+        }
+      } else {
+        if (draftGeometryLayer) map.removeLayer(draftGeometryLayer);
+        draftGeometryLayer = wantsPolygon
+          ? L.polygon(latLngs, { color: activeColor, weight: 3, fillColor: activeColor, fillOpacity: .22 }).addTo(map)
+          : geometryMode === "Polygon" && latLngs.length
+            ? L.polyline(latLngs, { color: activeColor, weight: 4, dashArray: "7 7", lineCap: "round" }).addTo(map)
+            : null;
+      }
+    }
+
+    function updateDraftGeometry() {
+      updateDraftBoundary();
+      if (draftVertexLayer) map.removeLayer(draftVertexLayer);
+      if (geometryMode === "Polygon" && draftCoordinates.length) {
+        const activeColor = getHazardColor();
+        const vertexIcon = L.divIcon({ className: "", html: '<div class="area-vertex" style="background:' + activeColor + '"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+        const vertexMarkers = draftCoordinates.map(([lng, lat], index) => {
+          const marker = L.marker([lat, lng], {
+            icon: vertexIcon, draggable: true, autoPan: true, keyboard: false, bubblingMouseEvents: false,
+          });
+          marker.on("drag", () => {
+            const moving = marker.getLatLng();
+            draftCoordinates[index] = [moving.lng, moving.lat];
+            updateAreaCenter();
+            updateDraftBoundary();
+          });
+          marker.on("dragend", () => {
+            const moved = marker.getLatLng();
+            draftCoordinates[index] = [moved.lng, moved.lat];
+            updateAreaCenter();
+            requestAnimationFrame(() => {
+              updateDraftGeometry();
+              updateAreaStatus("Point moved");
+            });
+          });
+          return marker;
+        });
+        draftVertexLayer = L.layerGroup(vertexMarkers).addTo(map);
+        vertexMarkers.forEach((marker, index) => {
+          const element = marker.getElement();
+          if (!element) return;
+          element.addEventListener("click", event => {
+            event.stopPropagation();
+          }, { capture: true });
+          element.addEventListener("dblclick", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            draftCoordinates.splice(index, 1);
+            updateAreaCenter();
+            updateDraftGeometry();
+            updateAreaStatus("Point removed");
+          }, { capture: true, once: true });
+        });
+      } else {
+        draftVertexLayer = null;
+      }
+    }
+
+    function addGeometryVertex(latlng, source = "Map") {
+      if (geometryMode !== "Polygon") return;
+      const point = [Number(latlng.lng), Number(latlng.lat)];
+      draftCoordinates.push(point);
+      updateAreaCenter();
+      updateDraftGeometry();
+      updateAreaStatus();
+    }
+
+    function updateAreaCenter() {
+      if (!draftCoordinates.length) { userCoords = null; return; }
+      const center = draftCoordinates.reduce((sum, coordinate) => [sum[0] + coordinate[0], sum[1] + coordinate[1]], [0, 0]);
+      userCoords = { lat: center[1] / draftCoordinates.length, lng: center[0] / draftCoordinates.length };
+    }
+
+    function updateAreaStatus(action = "") {
+      undoAreaBtn.disabled = geometryMode !== "Polygon" || draftCoordinates.length === 0;
+      if (!draftCoordinates.length) {
+        locationStatus.textContent = "Area: click at least 3 points around the affected zone";
+        return;
+      }
+      const boundaryCount = expandingBoundary(draftCoordinates).length;
+      const readiness = boundaryCount >= 3
+        ? "expanding boundary ready to Send"
+        : `${3 - boundaryCount} more boundary point${3 - boundaryCount === 1 ? "" : "s"} needed`;
+      locationStatus.textContent = `${action ? `${action} · ` : ""}Area: ${draftCoordinates.length} point${draftCoordinates.length === 1 ? "" : "s"} — ${readiness}`;
+    }
+
+    function undoAreaPoint() {
+      if (geometryMode !== "Polygon" || !draftCoordinates.length) return;
+      draftCoordinates.pop();
+      updateAreaCenter();
+      updateDraftGeometry();
+      updateAreaStatus("Undid last point");
+    }
+
+    undoAreaBtn.addEventListener("click", undoAreaPoint);
+
+    function buildDraftGeometry() {
+      if (geometryMode === "GpsCircle" && draftCoordinates.length >= 4) return { type: "Polygon", coordinates: [draftCoordinates] };
+      if (geometryMode === "Polygon") {
+        const boundary = expandingBoundary(draftCoordinates);
+        if (boundary.length >= 3) return { type: "Polygon", coordinates: [[...boundary, boundary[0]]] };
+      }
+      return null;
+    }
+
+    geometryButtons.forEach(button => button.addEventListener("click", () => {
+      selectGeometryMode(button.dataset.geometry);
+      if (button.dataset.geometry === "GpsCircle") requestUserLocationForRadius();
+    }));
+
+    function selectType(type) {
+      selectedType = type; currentType.innerText = "Selected: " + type; renderChips();
+      updateDraftGeometry();
+      if (pendingReport) {
+        pendingReport.type = type;
+        if (pendingMarker) pendingMarker.setPopupContent("Click anywhere to drop pin");
+      }
+    }
+
+    map.on("click", e => {
+      if (e.originalEvent?.target?.closest?.(".area-vertex")) return;
+      if (settings.radiusAnchor === "custom" && !pendingReport) {
+        settings.radiusCenter = { lat: e.latlng.lat, lng: e.latlng.lng };
+        syncMiniRadiusUI(true); refreshReportVisibility();
+      }
+      if (geometryMode === "Polygon") addGeometryVertex(e.latlng);
+    });
+
+    reportInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitReport() } });
+
+    async function compressImageForUpload(file, maxDimension = 1600, quality = 0.82) {
+      if (!file || !file.type.startsWith("image/") || file.size < 300 * 1024) {
+        return file;
+      }
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let { width, height } = img;
+            if (width > maxDimension || height > maxDimension) {
+              if (width > height) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              } else {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
+              }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              blob => {
+                if (blob && blob.size < file.size) {
+                  const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+                    type: "image/jpeg",
+                    lastModified: Date.now()
+                  });
+                  resolve(compressedFile);
+                } else {
+                  resolve(file);
+                }
+              },
+              "image/jpeg",
+              quality
+            );
+          };
+          img.onerror = () => resolve(file);
+          img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(file);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function submitReport() {
+      const text = reportInput.value.trim();
+      if (!text) return showAlertlyToast("Oops!", "Please write a report first.", "✍️");
+
+      const geometry = buildDraftGeometry();
+      if (!geometry) {
+        const instruction = geometryMode === "GpsCircle"
+          ? "Select GPS Circle and allow location, or switch to Draw Area."
+          : "Click at least three points around the affected area.";
+        return showAlertlyToast("Map the report", instruction, "🗺️", 4500);
+      }
+      const formData = new FormData();
+      const reportData = {
+        type: selectedType,
+        text,
+        lat: userCoords.lat,
+        lng: userCoords.lng,
+        geometry,
+        verified: false,
+        createdAt: Date.now()
+      };
+
+      formData.append("reportData", JSON.stringify(reportData));
+      const processedFiles = await Promise.all(selectedFiles.map(file => compressImageForUpload(file)));
+      processedFiles.forEach(file => {
+        formData.append("images", file);
+      });
+      showAlertlyToast("Publishing...", "Saving your report to the community map.", "🌐", 2500);
+      try {
+        const resp = await fetch("/api/reports/publish", {
+          method: "POST",
+          body: formData
+        });
+        const result = await resp.json();
+
+        if (result.success) {
+          console.log("💾 Report and Images saved to server.");
+          if (result.id) reportData.id = result.id;
+          if (result.images) reportData.images = result.images;
+          addReportToMap(reportData);
+          reportInput.value = "";
+          setSelectedFiles([]);
+          selectGeometryMode(geometryMode);
+          showAlertlyToast("Success!", "Your report is now live on the map.", "✅");
+        } else {
+          showAlertlyToast("Could not publish", result.error || "Please check the report and try again.", "❌");
+        }
+      } catch (err) {
+        console.error("Failed to save report to server:", err);
+        showAlertlyToast("Error", "Failed to publish report. Please check your connection.", "❌");
+      }
+    }
+
+    async function requestRemoval(reportId, btnEl) {
+      const reason = await showAlertlyPrompt(
+        "Request Removal",
+        "Why should this report be removed? (e.g. Resolved, Fake, Duplicate, Wrong Type)",
+        "State your reason here..."
+      );
+
+      if (reason === null) return;
+      const cleanReason = reason.trim().toLowerCase();
+      if (!cleanReason) return showAlertlyToast("Wait!", "A reason is required to request removal.", "⚠️");
+
+      const reportEntry = reportStore.find(e => String(e.data?.id) === String(reportId)) || reportStore[reportId];
+      if (!reportEntry) return;
+      const originalText = btnEl.innerText;
+      btnEl.innerText = "⌛ Thinking...";
+      btnEl.disabled = true;
+      const moderatorToast = showAlertlyToast("AI Moderator", "Evaluating your request...", "🛡️", Infinity);
+
+      try {
+        const resp = await fetch("/api/removal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reason: cleanReason,
+            reportData: reportEntry.data
+          })
+        });
+
+        const data = await resp.json();
+
+        if (data.success && data.queued) {
+          moderatorToast.update("Request sent", data.message || "A moderator will review this report.", "🛡️", 7000);
+          btnEl.innerText = "Removal requested";
+        } else if (data.success && data.decision?.should_remove) {
+          map.removeLayer(reportEntry.marker);
+          reportEntry.data.isRemoved = true;
+          moderatorToast.update("AI Moderator: REMOVED", data.decision.ai_reasoning, "🛡️", 15000);
+        } else if (data.success) {
+          moderatorToast.update("AI Moderator: KEPT", data.decision.ai_reasoning, "🛡️", 15000);
+          btnEl.innerText = originalText;
+          btnEl.disabled = false;
+        } else {
+          moderatorToast.update("Internal Error", "Failed to reach the moderator backend.", "❌", 5000);
+          btnEl.innerText = originalText;
+          btnEl.disabled = false;
+        }
+      } catch (err) {
+        console.error("Removal API failed:", err);
+        moderatorToast.update("Server Error", "Could not connect to the removal backend.", "❌", 5000);
+        btnEl.innerText = originalText;
+        btnEl.disabled = false;
+      }
+    }
+    window.requestRemoval = requestRemoval;
+
+    function addReportToMap(data) {
+      const emoji = data.type.split(" ")[0], label = data.type.replace(emoji, "").trim();
+      const images = Array.isArray(data.images) ? data.images : [];
+
+      const typeGradients = {
+        "🔥": "linear-gradient(135deg,#7f1d1d,#dc2626)",
+        "🌊": "linear-gradient(135deg,#0c4a6e,#0284c7)",
+        "🌋": "linear-gradient(135deg,#450a0a,#991b1b)",
+        "⛰️": "linear-gradient(135deg,#451a03,#92400e)",
+        "🫨": "linear-gradient(135deg,#3f3f46,#71717a)",
+        "❓": "linear-gradient(135deg,#1e1b4b,#4f46e5)"
+      };
+      const grad = typeGradients[emoji] || "linear-gradient(135deg,#1e293b,#334155)";
+      const typeColors = { "🔥": "#ef4444", "🌊": "#0ea5e9", "🌋": "#b91c1c", "⛰️": "#a16207", "🫨": "#71717a", "❓": "#6366f1" };
+      const shapeColor = typeColors[emoji] || "#6366f1";
+
+      const s = Math.floor((Date.now() - data.createdAt) / 1000);
+      const ago = s < 60 ? "Just now" : s < 3600 ? Math.floor(s / 60) + "m ago" : s < 86400 ? Math.floor(s / 3600) + "h ago" : Math.floor(s / 86400) + "d ago";
+
+      let mediaHtml = "";
+      const isVideoAttachment = (media) => String(media?.type || "").toLowerCase().startsWith("video/") || /\.(mp4|webm|mov|m4v|mpeg|mpg)(?:$|[?#])/i.test(String(media?.url || ""));
+      const renderMedia = (media, idx, className = "") => isVideoAttachment(media)
+        ? '<video class="' + className + '" src="' + escapeHtml(media.url) + '" controls preload="metadata" playsinline></video>'
+        : '<img class="' + className + '" src="' + escapeHtml(media.url) + '" alt="' + escapeHtml(media.name || "Image") + '" data-idx="' + idx + '">';
+      if (images.length === 1) {
+        mediaHtml = '<div class="rc-image-wrap">' + renderMedia(images[0], 0, "rc-image") + '</div>';
+      } else if (images.length >= 2) {
+        const colClass = images.length === 2 ? "cols-2" : "cols-3";
+        const cells = images.map((media, idx) => '<div class="rc-gallery-cell">' + renderMedia(media, idx) + '</div>').join("");
+        mediaHtml = '<div class="rc-gallery ' + colClass + '">' + cells + '</div>';
+      }
+
+      const reportId = String(data.id || "");
+      const isSuspicious = data.hasRemovalRequest ||
+        ["nsfw", "suspicious", "likely_false", "flagged"].includes(String(data.aiEvaluation?.verdict || "").toLowerCase());
+      const flaggedChip = isSuspicious
+        ? '<div style="margin-top:6px;padding:4px 8px;border-radius:6px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);color:#fca5a5;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px;">⚠️ Community / AI Flagged · Under Review</div>'
+        : '';
+
+      const popupHtml =
+        '<div class="report-card">' +
+        '<div class="rc-header" style="background:' + grad + '">' +
+        '<div class="rc-emoji-badge">' + emoji + '</div>' +
+        '<div class="rc-header-text">' +
+        '<div class="rc-type-label">' + escapeHtml(label) + '</div>' +
+        '<div class="rc-meta">' + escapeHtml(ago) + '</div>' +
+        '</div>' +
+        '</div>' +
+        (flaggedChip ? '<div style="padding:4px 12px 0;">' + flaggedChip + '</div>' : '') +
+        '<div class="rc-divider"></div>' +
+        '<div class="rc-body">' +
+        '<div class="rc-text">' + escapeHtml(data.text) + '</div>' +
+        mediaHtml +
+        '</div>' +
+        '<div class="rc-footer">' +
+        '<button class="rc-remove-btn" data-remove-id="' + escapeHtml(reportId) + '">Request Removal</button>' +
+        '</div>' +
+        '</div>';
+
+      const geometry = data.geometry || { type: "Point", coordinates: [data.lng, data.lat] };
+      let marker;
+      if (geometry.type === "LineString") {
+        marker = L.polyline(geometry.coordinates.map(([lng, lat]) => [lat, lng]), { color: shapeColor, weight: 5, opacity: .9 });
+      } else if (geometry.type === "Polygon") {
+        marker = L.polygon((geometry.coordinates[0] || []).map(([lng, lat]) => [lat, lng]), { color: shapeColor, weight: 3, opacity: .95, fillColor: shapeColor, fillOpacity: .24 });
+      } else {
+        const pinClass = (Date.now() - data.createdAt < 5000) ? "alertly-pin pin-pop" : "alertly-pin";
+        marker = L.marker([geometry.coordinates[1], geometry.coordinates[0]], {
+          icon: L.divIcon({ className: "", html: '<div class="' + pinClass + '"></div>', iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32] })
+        });
+      }
+      marker.addTo(map).bindPopup(popupHtml, { maxWidth: 310 });
+
+      reportStore.push({ marker, data });
+
+      marker.on("popupopen", ev => {
+        const root = ev.popup.getElement(); if (!root) return;
+        const removeBtn = root.querySelector("[data-remove-id]");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", () => {
+            const id = removeBtn.getAttribute("data-remove-id");
+            requestRemoval(id, removeBtn);
+          });
+        }
+        if (images.length) {
+          root.querySelectorAll("[data-idx]").forEach(el =>
+            el.addEventListener("click", () => openImageViewer(images, Number(el.getAttribute("data-idx") || "0")))
+          );
+        }
+      });
+
+      refreshReportVisibility();
+    }
+
+    async function loadReportsFromServer() {
+      try {
+        const resp = await fetch("/api/reports/data");
+        const data = await resp.json();
+        if (Array.isArray(data)) {
+          const incomingIds = new Set(data.map(r => String(r.id)));
+          // Remove layers for reports that are no longer active/present
+          for (let i = reportStore.length - 1; i >= 0; i--) {
+            const entry = reportStore[i];
+            const id = String(entry.data?.id || "");
+            if (id && !incomingIds.has(id)) {
+              map.removeLayer(entry.marker);
+              reportStore.splice(i, 1);
+            }
+          }
+          // Add new reports that are not yet on the map
+          const existingIds = new Set(reportStore.map(e => String(e.data?.id || "")).filter(Boolean));
+          let addedCount = 0;
+          data.forEach(r => {
+            if (!existingIds.has(String(r.id))) {
+              addReportToMap(r);
+              addedCount++;
+            }
+          });
+          if (addedCount > 0) refreshReportVisibility();
+        }
+      } catch (err) {
+        console.error("Failed to load reports from server:", err);
+      }
+    }
+
+    function createCleanPin() { return L.divIcon({ className: "", html: '<div class="alertly-pin"></div>', iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32] }) }
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c])) }
+
+    async function syncStaffControls() {
+      try {
+        const response = await fetch("/api/staff/session", { cache: "no-store" });
+        const session = await response.json();
+        const staffLink = document.getElementById("staffAccessLink");
+        staffLink.textContent = session.authenticated ? `👤 ${session.user.name} · Staff workspace` : "🔐 Staff sign in";
+      } catch (_) {}
+    }
+
+    syncStaffControls();
+
+(function boot() {
+      radiusSlider.value = selectedRadius;
+      radiusValue.innerText = selectedRadius >= 120 ? "Global" : selectedRadius;
+      updateRadiusHint();
+
+      requestAnimationFrame(() => {
+        initMiniMapOnce();
+        applyAnchorMode();
+
+        syncMiniRadiusUI(true);
+        refreshReportVisibility();
+        loadReportsFromServer();
+        let reportRefreshTimer = null;
+        const scheduleReportRefresh = () => {
+          clearTimeout(reportRefreshTimer);
+          reportRefreshTimer = setTimeout(async () => {
+            if (!document.hidden) await loadReportsFromServer();
+            scheduleReportRefresh();
+          }, document.hidden ? 120000 : 15000);
+        };
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) loadReportsFromServer();
+          scheduleReportRefresh();
+        });
+        scheduleReportRefresh();
+        if (geometryMode === "GpsCircle") requestUserLocationForRadius();
+      });
+    })();
+  </script>
+</body>
+
+</html>

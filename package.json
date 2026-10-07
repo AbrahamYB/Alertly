@@ -1,0 +1,23 @@
+{
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node scripts/test.js",
+    "test:unit": "node --test --test-concurrency=1 test/*.test.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
+    "seed": "node scripts/seed.js",
+    "seed:demo": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "cheerio": "^1.0.0",
+    "compression": "^1.8.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "pg": "^8.23.1"
+  }
+}

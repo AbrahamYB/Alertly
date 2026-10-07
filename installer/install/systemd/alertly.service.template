@@ -1,0 +1,30 @@
+[Unit]
+Description=Alertly
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=alertly
+Group=alertly
+WorkingDirectory=/opt/alertly/current
+EnvironmentFile=/opt/alertly/shared/config/alertly.env
+ExecStart=/opt/alertly/runtime/bin/node /opt/alertly/current/server.js
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/opt/alertly/shared/data /opt/alertly/shared/uploads /opt/alertly/shared/backups /opt/alertly/shared/logs
+
+[Install]
+WantedBy=multi-user.target
+

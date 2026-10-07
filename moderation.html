@@ -1,0 +1,2114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Alertly — Report Moderation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: rgba(16, 20, 29, 0.92);
+      --card: rgba(255, 255, 255, 0.055);
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --good: #10b981;
+      --bad: #ef4444;
+      --warn: #f59e0b;
+      --info: #0ea5e9;
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
+      --queue-width: 380px;
+      --detail-width: 360px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+    }
+
+    .shell {
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      padding: 10px;
+      background: radial-gradient(circle at 50% -20%, #1d2440 0, transparent 40%), var(--bg);
+    }
+
+    .glass {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(0, 0, 0, 0.05)), var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(24px) saturate(160%);
+    }
+
+    .topbar {
+      min-height: 52px;
+      border-radius: 14px;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 4;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: max-content;
+      flex-shrink: 0;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #818cf8, #4f46e5);
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+    }
+
+    .brand h1 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .brand small {
+      color: var(--muted);
+      font-size: 9.5px;
+      display: block;
+    }
+
+    .stats {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .stat {
+      padding: 4px 7px;
+      border-radius: 7px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      font-size: 10.5px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .stat b {
+      color: var(--text);
+      margin-right: 2px;
+    }
+
+    .stat.pending b {
+      color: #fbbf24;
+    }
+
+    .stat.flagged b {
+      color: #f87171;
+    }
+
+    .filters {
+      display: flex;
+      gap: 5px;
+      margin-left: auto;
+      align-items: center;
+      min-width: 0;
+      flex-shrink: 1;
+    }
+
+    .control {
+      height: 32px;
+      color: var(--text);
+      background: rgba(7, 10, 17, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 8px;
+      font-size: 11px;
+      outline: none;
+      min-width: 0;
+    }
+
+    .control:focus {
+      border-color: #818cf8;
+    }
+
+    .search {
+      width: 140px;
+    }
+
+    .nav {
+      height: 32px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--card);
+      font-size: 10.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+
+    .nav:hover {
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    .workspace {
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+      position: relative;
+      overflow: hidden;
+      gap: 0;
+      height: 100%;
+      user-select: auto;
+    }
+
+    .workspace.resizing {
+      user-select: none !important;
+      cursor: col-resize !important;
+    }
+
+    .workspace.resizing * {
+      user-select: none !important;
+      pointer-events: none !important;
+      transition: none !important;
+    }
+
+    .workspace.resizing .gutter-resizer {
+      pointer-events: auto !important;
+    }
+
+    .pane {
+      min-height: 0;
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .queue {
+      width: var(--queue-width);
+      min-width: 240px;
+      max-width: 650px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+      will-change: width;
+      z-index: 5;
+    }
+
+    .queue.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      margin: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      overflow: hidden !important;
+      display: none !important;
+    }
+
+    .gutter-resizer {
+      width: 10px;
+      flex-shrink: 0;
+      cursor: col-resize;
+      user-select: none;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 20;
+      background: transparent;
+      transition: background 0.15s ease;
+    }
+
+    .gutter-resizer.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      display: none !important;
+    }
+
+    .gutter-handle {
+      width: 3px;
+      height: 48px;
+      border-radius: 3px;
+      background: var(--border);
+      transition: background 0.15s, height 0.15s, transform 0.15s;
+      pointer-events: none;
+    }
+
+    .gutter-resizer:hover .gutter-handle,
+    .gutter-resizer.active .gutter-handle {
+      background: var(--accent);
+      height: 84px;
+      transform: scaleX(1.4);
+    }
+
+    .gutter-resizer:hover,
+    .gutter-resizer.active {
+      background: rgba(99, 102, 241, 0.12);
+    }
+
+    .pane-toggle-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      margin-left: 6px;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .pane-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .floating-panel-tab {
+      position: absolute;
+      top: 12px;
+      z-index: 1200;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      transition: transform 0.18s, background 0.15s, border-color 0.15s, box-shadow 0.18s;
+      backdrop-filter: blur(20px);
+    }
+
+    .floating-panel-tab:hover {
+      background: rgba(24, 30, 44, 0.96);
+      border-color: #818cf8;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 28px rgba(99, 102, 241, 0.25);
+    }
+
+    .floating-panel-tab.queue-tab {
+      left: 12px;
+    }
+
+    .floating-panel-tab.detail-tab {
+      right: 12px;
+    }
+
+    .floating-panel-tab .tab-badge {
+      font-size: 9.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: rgba(99, 102, 241, 0.25);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      font-weight: 800;
+    }
+
+    .floating-panel-tab svg {
+      opacity: 0.7;
+    }
+
+    .queue-head {
+      padding: 12px 14px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .queue-head h2, .detail h2 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .count {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .cat-bar, .cat-sidebar {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.18);
+      flex-shrink: 0;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    }
+
+    .cat-bar::-webkit-scrollbar, .cat-sidebar::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .cat-bar::-webkit-scrollbar-thumb, .cat-sidebar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+    }
+
+    .cat-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .cat-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .cat-btn.active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: #818cf8;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+
+    .cat-btn .cat-label {
+      font-size: 10.5px;
+    }
+
+    .cat-btn .cat-badge {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.09);
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    .cat-btn.active .cat-badge {
+      background: #4f46e5;
+      color: #fff;
+    }
+
+    .report-list {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .empty-state {
+      padding: 30px 14px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-style: italic;
+    }
+
+    .report-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: var(--card);
+      padding: 10px;
+      margin: 4px 0;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      display: block;
+    }
+
+    .report-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .report-card.active {
+      border-color: #818cf8;
+      background: rgba(99, 102, 241, 0.18);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .type-badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-weight: 700;
+      font-size: 11.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-time {
+      margin-left: auto;
+      font-size: 9.5px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .card-copy {
+      font-size: 10.5px;
+      line-height: 1.35;
+      color: #cbd5e1;
+      margin: 6px 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+
+    .badge.approved {
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .badge.pending {
+      background: rgba(245, 158, 11, 0.18);
+      color: #fde047;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+
+    .badge.rejected {
+      background: rgba(239, 68, 68, 0.18);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+
+    .badge.flag {
+      background: rgba(239, 68, 68, 0.22);
+      color: #fecaca;
+      border: 1px solid rgba(239, 68, 68, 0.45);
+    }
+
+    .badge.ai-plausible {
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .badge.ai-suspicious {
+      background: rgba(245, 158, 11, 0.22);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+    }
+
+    .badge.ai-likely_false {
+      background: rgba(239, 68, 68, 0.22);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.45);
+    }
+
+    .map-pane {
+      flex: 1 1 0%;
+      min-width: 0;
+      height: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .map {
+      height: 100%;
+      width: 100%;
+      background: #111827;
+      flex: 1;
+    }
+
+    .map-help {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 500;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 9.5px;
+      color: #cbd5e1;
+      pointer-events: none;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 7px !important;
+      background: rgba(255, 255, 255, 0.68) !important;
+      padding: 0 3px !important;
+    }
+
+    .leaflet-control-zoom {
+      border: 0 !important;
+    }
+
+    .leaflet-control-zoom a {
+      background: rgba(17, 24, 39, 0.9) !important;
+      color: #fff !important;
+      border-color: var(--border) !important;
+    }
+
+    .detail {
+      width: var(--detail-width);
+      min-width: 280px;
+      max-width: 650px;
+      flex-shrink: 0;
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+      will-change: width;
+      z-index: 5;
+    }
+
+    .detail.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      margin: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      overflow: hidden !important;
+      display: none !important;
+    }
+
+    .detail-empty {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 24px;
+    }
+
+    .detail-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .detail-head .badge-group {
+      margin-left: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+    }
+
+    .field {
+      display: grid;
+      gap: 4px;
+      margin: 8px 0;
+    }
+
+    .field label {
+      font-size: 8.5px;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: rgba(4, 7, 13, 0.6);
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .field textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: #818cf8;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .three {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 5px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      min-height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: filter 0.12s, background 0.12s;
+    }
+
+    .btn:hover {
+      filter: brightness(1.18);
+    }
+
+    .btn.primary {
+      background: #4f46e5;
+      border-color: #6366f1;
+      color: #fff;
+    }
+
+    .btn.good {
+      background: rgba(16, 185, 129, 0.22);
+      border-color: rgba(16, 185, 129, 0.45);
+      color: #6ee7b7;
+    }
+
+    .btn.bad {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .btn.warn {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fde047;
+    }
+
+    .btn.wide {
+      grid-column: 1 / -1;
+    }
+
+    .section {
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      padding-top: 10px;
+    }
+
+    .section-title {
+      font-size: 8.5px;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .ai-panel {
+      padding: 9px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid var(--border);
+      margin-top: 5px;
+    }
+
+    .image-gallery {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+
+    .image-thumb {
+      width: 70px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+
+    .image-thumb:hover {
+      transform: scale(1.05);
+    }
+
+    .request, .audit {
+      font-size: 10px;
+      line-height: 1.4;
+      border-radius: 8px;
+      background: var(--card);
+      padding: 7px;
+      margin-top: 5px;
+    }
+
+    .request {
+      border-left: 3px solid var(--bad);
+    }
+
+    .request-status {
+      display: inline-block;
+      font-size: 8.5px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .request-status.pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .request-status.accepted { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .request-status.dismissed { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+    .request-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .audit time, .request time {
+      display: block;
+      color: var(--muted);
+      font-size: 8.5px;
+      margin-top: 3px;
+    }
+
+    .nearby {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 8px;
+      padding: 7px;
+      text-align: left;
+      margin-top: 4px;
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .nearby strong {
+      display: block;
+    }
+
+    .nearby span {
+      color: var(--muted);
+      font-size: 8.5px;
+    }
+
+    .edit-tools {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .edit-tools.active {
+      display: grid;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: #111827;
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      font-size: 11px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, bottom 0.2s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      bottom: 24px;
+    }
+
+    .vertex {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #6366f1;
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    @media (max-width: 1100px) {
+      .gutter-right {
+        display: none !important;
+      }
+      .detail {
+        position: fixed;
+        right: 6px;
+        top: 58px;
+        bottom: 6px;
+        width: min(340px, calc(100vw - 12px)) !important;
+        z-index: 800;
+        transform: translateX(calc(100% + 20px));
+        transition: transform 0.25s ease, opacity 0.25s ease;
+      }
+      .detail.open:not(.collapsed) {
+        transform: none;
+        opacity: 1;
+        width: min(340px, calc(100vw - 12px)) !important;
+      }
+      .brand small {
+        display: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        padding: 6px;
+        gap: 6px;
+      }
+      .workspace {
+        flex-direction: column;
+      }
+      .gutter-left {
+        display: none !important;
+      }
+      .queue {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        height: 50%;
+      }
+      .map-pane {
+        width: 100% !important;
+        height: 50%;
+      }
+      .brand small, .stats {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar glass">
+      <div class="brand">
+        <div class="brand-icon">🛡️</div>
+        <div>
+          <h1>Report Moderation</h1>
+          <small>Review community submissions</small>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="totalStat">0</b> total</div>
+        <div class="stat pending"><b id="pendingStat">0</b> pending</div>
+        <div class="stat flagged"><b id="flaggedStat">0</b> flagged</div>
+        <div class="stat"><b id="visibleStat">0</b> shown</div>
+      </div>
+      <div class="filters">
+        <input class="control search" id="searchFilter" placeholder="Search reports…">
+        <select class="control" id="statusFilter">
+          <option value="all" selected>All reports</option>
+          <option value="regular">Regular submissions</option>
+          <option value="suspicious">Suspicious / Flagged</option>
+        </select>
+        <select class="control" id="dateFilter">
+          <option value="all">Any date</option>
+          <option value="24h">24 hours</option>
+          <option value="7d">7 days</option>
+          <option value="30d">30 days</option>
+        </select>
+      </div>
+      <a class="nav" href="/report">Reports</a>
+      <a class="nav" href="/">Main Map</a>
+    </header>
+
+    <section class="workspace" id="workspace">
+      <aside class="pane queue glass" id="queuePanel">
+        <div class="queue-head">
+          <h2>Review queue</h2>
+          <span class="count" id="queueCount">0 reports</span>
+          <button class="pane-toggle-btn" id="queueCollapseBtn" title="Collapse review queue" type="button" aria-label="Collapse queue">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+        </div>
+        <nav class="cat-bar" id="catSidebar"></nav>
+        <div class="report-list" id="reportList"></div>
+      </aside>
+
+      <div class="gutter-resizer gutter-left" id="queueResizer" title="Drag horizontally to resize review queue" role="separator" aria-orientation="vertical">
+        <div class="gutter-handle"></div>
+      </div>
+
+      <section class="pane map-pane glass" id="mapPane">
+        <div class="map" id="map"></div>
+        <div class="map-help glass" id="mapHelp">Select a report to inspect its mapped area</div>
+        <button class="floating-panel-tab queue-tab glass" id="queueExpandTab" title="Open Review Queue" type="button" hidden>
+          <span class="tab-icon">📋</span>
+          <span class="tab-title">Queue</span>
+          <span class="tab-badge" id="queueExpandBadge">0</span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="floating-panel-tab detail-tab glass" id="detailExpandTab" title="Open Report Details" type="button" hidden>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <span class="tab-icon">📝</span>
+          <span class="tab-title">Details</span>
+        </button>
+      </section>
+
+      <div class="gutter-resizer gutter-right collapsed" id="detailResizer" title="Drag horizontally to resize details panel" role="separator" aria-orientation="vertical">
+        <div class="gutter-handle"></div>
+      </div>
+
+      <aside class="pane detail glass collapsed" id="detailPanel">
+        <div class="detail-empty" id="detailEmpty">Select a report from the queue or map.</div>
+        <div class="detail-content" id="detailContent" hidden>
+          <div class="detail-head">
+            <div>
+              <h2 id="detailTitle"></h2>
+              <div class="count" id="detailMeta"></div>
+            </div>
+            <div class="badge-group">
+              <span class="badge" id="detailModerationBadge">PENDING</span>
+              <span class="badge" id="detailIncidentBadge">ACTIVE</span>
+            </div>
+            <button class="pane-toggle-btn" id="detailCollapseBtn" title="Collapse details" type="button" aria-label="Collapse details">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+
+          <div class="section-title">Moderator Actions</div>
+          <div class="three">
+            <button class="btn good" id="approveBtn">Approve ✓</button>
+            <button class="btn bad" id="rejectBtn">Reject ✕</button>
+            <button class="btn warn" id="setPendingBtn">Pending ⏳</button>
+          </div>
+
+          <div class="field">
+            <label for="editText">Report Description</label>
+            <textarea id="editText"></textarea>
+          </div>
+
+          <div class="two">
+            <div class="field">
+              <label for="editType">Category</label>
+              <select id="editType"></select>
+            </div>
+            <div class="field">
+              <label for="editSeverity">Severity</label>
+              <select id="editSeverity">
+                <option value="unknown">Unknown</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="editStatus">Incident State</label>
+            <select id="editStatus">
+              <option value="active">Active Incident</option>
+              <option value="monitoring">Monitoring</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+
+          <div class="button-row">
+            <button class="btn primary wide" id="saveBtn">Save Details</button>
+            <button class="btn" id="editAreaBtn">Edit Mapped Area</button>
+            <button class="btn" id="closeDetailBtn">Close Panel</button>
+          </div>
+
+          <div class="edit-tools" id="editTools">
+            <button class="btn" id="undoPointBtn">Undo Point</button>
+            <button class="btn good" id="saveAreaBtn">Save Area</button>
+            <button class="btn bad wide" id="cancelAreaBtn">Cancel Area Edit</button>
+          </div>
+
+          <div class="button-row">
+            <button class="btn bad wide" id="deleteBtn">Delete Report & Files</button>
+          </div>
+
+          <div class="section" id="aiSection">
+            <div class="section-title">AI Credibility & Vision Verification</div>
+            <div class="ai-panel">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span class="badge" id="aiVerdictBadge">UNVERIFIED</span>
+                <button class="btn" id="recheckAiBtn" style="margin-left:auto;min-height:26px;padding:0 8px;font-size:9.5px;">Re-check AI</button>
+              </div>
+              <div id="aiReasonText" style="font-size:10.5px;line-height:1.4;color:#cbd5e1;margin-top:6px;"></div>
+            </div>
+          </div>
+
+          <div class="section" id="imageSection" hidden>
+            <div class="section-title">Attached Media</div>
+            <div class="image-gallery" id="imageGallery"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Nearby Related Reports</div>
+            <div id="nearbyList"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Removal Requests</div>
+            <div id="requestList"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Audit History</div>
+            <div id="auditList"></div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const CATEGORIES = [
+      { id: "fire", label: "🔥 Fire", color: "#ef4444" },
+      { id: "flood", label: "🌊 Flood", color: "#0ea5e9" },
+      { id: "volcano", label: "🌋 Volcanic Activity", color: "#b91c1c" },
+      { id: "landslide", label: "⛰️ Landslide", color: "#a16207" },
+      { id: "earthquake", label: "🫨 Earthquake", color: "#71717a" },
+      { id: "other", label: "❓ Other", color: "#6366f1" }
+    ];
+
+    const COLOR_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.color]));
+
+    // DOM Elements
+    const elements = {
+      searchFilter: document.getElementById("searchFilter"),
+      statusFilter: document.getElementById("statusFilter"),
+      dateFilter: document.getElementById("dateFilter"),
+      totalStat: document.getElementById("totalStat"),
+      pendingStat: document.getElementById("pendingStat"),
+      flaggedStat: document.getElementById("flaggedStat"),
+      visibleStat: document.getElementById("visibleStat"),
+      queueCount: document.getElementById("queueCount"),
+      catSidebar: document.getElementById("catSidebar"),
+      reportList: document.getElementById("reportList"),
+      mapHelp: document.getElementById("mapHelp"),
+      detailPanel: document.getElementById("detailPanel"),
+      detailEmpty: document.getElementById("detailEmpty"),
+      detailContent: document.getElementById("detailContent"),
+      detailTitle: document.getElementById("detailTitle"),
+      detailMeta: document.getElementById("detailMeta"),
+      detailModerationBadge: document.getElementById("detailModerationBadge"),
+      detailIncidentBadge: document.getElementById("detailIncidentBadge"),
+      approveBtn: document.getElementById("approveBtn"),
+      rejectBtn: document.getElementById("rejectBtn"),
+      setPendingBtn: document.getElementById("setPendingBtn"),
+      editText: document.getElementById("editText"),
+      editType: document.getElementById("editType"),
+      editSeverity: document.getElementById("editSeverity"),
+      editStatus: document.getElementById("editStatus"),
+      saveBtn: document.getElementById("saveBtn"),
+      editAreaBtn: document.getElementById("editAreaBtn"),
+      closeDetailBtn: document.getElementById("closeDetailBtn"),
+      editTools: document.getElementById("editTools"),
+      undoPointBtn: document.getElementById("undoPointBtn"),
+      saveAreaBtn: document.getElementById("saveAreaBtn"),
+      cancelAreaBtn: document.getElementById("cancelAreaBtn"),
+      deleteBtn: document.getElementById("deleteBtn"),
+      nearbyList: document.getElementById("nearbyList"),
+      requestList: document.getElementById("requestList"),
+      auditList: document.getElementById("auditList"),
+      imageSection: document.getElementById("imageSection"),
+      imageGallery: document.getElementById("imageGallery"),
+      aiVerdictBadge: document.getElementById("aiVerdictBadge"),
+      aiReasonText: document.getElementById("aiReasonText"),
+      recheckAiBtn: document.getElementById("recheckAiBtn"),
+      toast: document.getElementById("toast"),
+      workspace: document.getElementById("workspace"),
+      queuePanel: document.getElementById("queuePanel"),
+      queueResizer: document.getElementById("queueResizer"),
+      queueCollapseBtn: document.getElementById("queueCollapseBtn"),
+      queueExpandTab: document.getElementById("queueExpandTab"),
+      queueExpandBadge: document.getElementById("queueExpandBadge"),
+      detailResizer: document.getElementById("detailResizer"),
+      detailCollapseBtn: document.getElementById("detailCollapseBtn"),
+      detailExpandTab: document.getElementById("detailExpandTab")
+    };
+
+    // Populate category dropdowns
+    CATEGORIES.forEach(cat => {
+      elements.editType.add(new Option(cat.label, cat.id));
+    });
+
+    // Initialize Map
+    const map = L.map("map", { zoomControl: true }).setView([15.5, -88], 7);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "&copy; Esri"
+    }).addTo(map);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "Labels &copy; Esri"
+    }).addTo(map);
+
+    const reportLayers = L.featureGroup().addTo(map);
+    const editVertices = L.layerGroup().addTo(map);
+
+    let reports = [];
+    let filteredReports = [];
+    let selectedCategory = "all";
+    let selectedReport = null;
+    let selectedLayer = null;
+    let editCoords = null;
+    let toastTimer = null;
+
+    // Horizontal Resizing & Auto-Collapse Management
+    const QUEUE_WIDTH_KEY = "alertly_mod_queue_width";
+    const DETAIL_WIDTH_KEY = "alertly_mod_detail_width";
+
+    let isQueueCollapsed = false;
+    let isDetailCollapsed = true; // Auto-collapsed initially until a report/activity is selected
+    let userManuallyToggledQueue = false;
+
+    function setQueueWidth(width) {
+      const maxW = Math.max(260, Math.min(650, window.innerWidth - 320));
+      const clamped = Math.max(240, Math.min(width, maxW));
+      document.documentElement.style.setProperty("--queue-width", `${clamped}px`);
+      try { localStorage.setItem(QUEUE_WIDTH_KEY, clamped); } catch {}
+    }
+
+    function setDetailWidth(width) {
+      const maxW = Math.max(280, Math.min(650, window.innerWidth - 320));
+      const clamped = Math.max(280, Math.min(width, maxW));
+      document.documentElement.style.setProperty("--detail-width", `${clamped}px`);
+      try { localStorage.setItem(DETAIL_WIDTH_KEY, clamped); } catch {}
+    }
+
+    function collapseQueue(collapse, isUserAction = false) {
+      if (isUserAction) userManuallyToggledQueue = true;
+      isQueueCollapsed = collapse;
+      if (elements.queuePanel) elements.queuePanel.classList.toggle("collapsed", collapse);
+      if (elements.queueResizer) elements.queueResizer.classList.toggle("collapsed", collapse);
+      if (elements.queueExpandTab) {
+        elements.queueExpandTab.hidden = !collapse;
+      }
+      setTimeout(() => map.invalidateSize(), 240);
+    }
+
+    function collapseDetail(collapse, isUserAction = false) {
+      isDetailCollapsed = collapse;
+      if (elements.detailPanel) elements.detailPanel.classList.toggle("collapsed", collapse);
+      if (elements.detailResizer) elements.detailResizer.classList.toggle("collapsed", collapse);
+      if (elements.detailExpandTab) {
+        elements.detailExpandTab.hidden = !(collapse && selectedReport);
+      }
+      setTimeout(() => map.invalidateSize(), 240);
+    }
+
+    function initResizers() {
+      const workspace = elements.workspace;
+      const queueResizer = elements.queueResizer;
+      const detailResizer = elements.detailResizer;
+
+      try {
+        const savedQueueW = localStorage.getItem(QUEUE_WIDTH_KEY);
+        if (savedQueueW) setQueueWidth(parseInt(savedQueueW, 10));
+        const savedDetailW = localStorage.getItem(DETAIL_WIDTH_KEY);
+        if (savedDetailW) setDetailWidth(parseInt(savedDetailW, 10));
+      } catch {}
+
+      // Left Resizer (Queue Panel) - Horizontal Only
+      let isDraggingQueue = false;
+      let queueStartX = 0;
+      let queueStartW = 0;
+
+      if (queueResizer) {
+        queueResizer.addEventListener("pointerdown", (e) => {
+          if (e.target.closest("button")) return;
+          if (isQueueCollapsed) {
+            collapseQueue(false, true);
+            return;
+          }
+          isDraggingQueue = true;
+          queueStartX = e.clientX;
+          queueStartW = elements.queuePanel ? elements.queuePanel.getBoundingClientRect().width : 380;
+          queueResizer.setPointerCapture(e.pointerId);
+          queueResizer.classList.add("active");
+          workspace.classList.add("resizing");
+          document.body.style.cursor = "col-resize";
+        });
+
+        queueResizer.addEventListener("pointermove", (e) => {
+          if (!isDraggingQueue) return;
+          const deltaX = e.clientX - queueStartX;
+          setQueueWidth(queueStartW + deltaX);
+          map.invalidateSize();
+        });
+
+        const stopQueueDrag = (e) => {
+          if (!isDraggingQueue) return;
+          isDraggingQueue = false;
+          queueResizer.classList.remove("active");
+          workspace.classList.remove("resizing");
+          document.body.style.cursor = "";
+          try { queueResizer.releasePointerCapture(e.pointerId); } catch {}
+          map.invalidateSize();
+        };
+
+        queueResizer.addEventListener("pointerup", stopQueueDrag);
+        queueResizer.addEventListener("pointercancel", stopQueueDrag);
+        queueResizer.addEventListener("dblclick", () => {
+          collapseQueue(!isQueueCollapsed, true);
+        });
+      }
+
+      // Right Resizer (Detail Panel) - Horizontal Only
+      let isDraggingDetail = false;
+      let detailStartX = 0;
+      let detailStartW = 0;
+
+      if (detailResizer) {
+        detailResizer.addEventListener("pointerdown", (e) => {
+          if (e.target.closest("button")) return;
+          if (isDetailCollapsed) {
+            collapseDetail(false, true);
+            return;
+          }
+          isDraggingDetail = true;
+          detailStartX = e.clientX;
+          detailStartW = elements.detailPanel ? elements.detailPanel.getBoundingClientRect().width : 360;
+          detailResizer.setPointerCapture(e.pointerId);
+          detailResizer.classList.add("active");
+          workspace.classList.add("resizing");
+          document.body.style.cursor = "col-resize";
+        });
+
+        detailResizer.addEventListener("pointermove", (e) => {
+          if (!isDraggingDetail) return;
+          const deltaX = detailStartX - e.clientX;
+          setDetailWidth(detailStartW + deltaX);
+          map.invalidateSize();
+        });
+
+        const stopDetailDrag = (e) => {
+          if (!isDraggingDetail) return;
+          isDraggingDetail = false;
+          detailResizer.classList.remove("active");
+          workspace.classList.remove("resizing");
+          document.body.style.cursor = "";
+          try { detailResizer.releasePointerCapture(e.pointerId); } catch {}
+          map.invalidateSize();
+        };
+
+        detailResizer.addEventListener("pointerup", stopDetailDrag);
+        detailResizer.addEventListener("pointercancel", stopDetailDrag);
+        detailResizer.addEventListener("dblclick", () => {
+          collapseDetail(!isDetailCollapsed, true);
+        });
+      }
+
+      // Header & Floating Toggle Buttons
+      elements.queueCollapseBtn?.addEventListener("click", () => collapseQueue(true, true));
+      elements.queueExpandTab?.addEventListener("click", () => collapseQueue(false, true));
+      elements.detailCollapseBtn?.addEventListener("click", () => collapseDetail(true, true));
+      elements.detailExpandTab?.addEventListener("click", () => collapseDetail(false, true));
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      }[char]));
+    }
+
+    function normalizeCategory(typeStr) {
+      const s = String(typeStr || "").toLowerCase();
+      if (s.includes("fire") || s.includes("thermal") || s.includes("burn") || s.includes("🔥")) return "fire";
+      if (s.includes("flood") || s.includes("rain") || s.includes("water") || s.includes("surge") || s.includes("🌊")) return "flood";
+      if (s.includes("volcan") || s.includes("lava") || s.includes("eruption") || s.includes("ash") || s.includes("🌋")) return "volcano";
+      if (s.includes("landslide") || s.includes("mudslide") || s.includes("debris") || s.includes("rockfall") || s.includes("⛰️") || s.includes("🏔️")) return "landslide";
+      if (s.includes("earthquake") || s.includes("seismic") || s.includes("tremor") || s.includes("quake") || s.includes("🫨") || s.includes("⚡")) return "earthquake";
+      return "other";
+    }
+
+    function formatRelativeAge(timestamp) {
+      const ms = Number(timestamp || 0);
+      const diff = Date.now() - (Number.isFinite(ms) && ms > 1e11 ? ms : new Date(timestamp).getTime());
+      if (Number.isNaN(diff) || diff < 0) return "Just now";
+      if (diff < 3600000) return `${Math.max(1, Math.floor(diff / 60000))}m ago`;
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+      return `${Math.floor(diff / 86400000)}d ago`;
+    }
+
+    function getModerationStatus(report) {
+      if (report.isRemoved || report.moderationStatus === "rejected") return "rejected";
+      if (report.moderationStatus === "approved" || report.verified) return "approved";
+      return "pending";
+    }
+
+    function isReportFlagged(report) {
+      const aiVerdict = report.aiEvaluation?.verdict;
+      const isAiFlagged = aiVerdict === "nsfw" || aiVerdict === "suspicious" || aiVerdict === "likely_false" || aiVerdict === "flagged";
+      const isRemovalReq = Boolean(report.removalRequested || (Array.isArray(report.removalRequests) && report.removalRequests.some(r => r.status === "pending")));
+      return isAiFlagged || isRemovalReq;
+    }
+
+    function createReportLayer(report, isSelected) {
+      const geometry = report.geometry || { type: "Point", coordinates: [report.lng, report.lat] };
+      const cat = normalizeCategory(report.type);
+      const color = COLOR_MAP[cat] || "#6366f1";
+      const modStatus = getModerationStatus(report);
+
+      let layer;
+      // Only render full polygon geometry if this specific report is selected
+      if (isSelected && geometry.type === "Polygon") {
+        const latLngs = (geometry.coordinates[0] || []).map(([lng, lat]) => [lat, lng]);
+        layer = L.polygon(latLngs, {
+          color,
+          weight: 4,
+          fillColor: color,
+          fillOpacity: 0.38
+        });
+      } else if (isSelected && geometry.type === "LineString") {
+        const latLngs = geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        layer = L.polyline(latLngs, {
+          color,
+          weight: 4,
+          opacity: 0.9
+        });
+      } else {
+        // Compact marker for unselected reports — prevents map clutter
+        const lat = Number.isFinite(report.lat) ? report.lat : (geometry.coordinates?.[1] || 15);
+        const lng = Number.isFinite(report.lng) ? report.lng : (geometry.coordinates?.[0] || -88);
+        layer = L.circleMarker([lat, lng], {
+          color: isSelected ? "#ffffff" : color,
+          weight: isSelected ? 3 : 1.5,
+          fillColor: color,
+          fillOpacity: isSelected ? 1 : (modStatus === "rejected" ? 0.35 : 0.8),
+          radius: isSelected ? 9 : 6
+        });
+      }
+
+      layer.on("click", () => selectReportById(report.id));
+      layer._reportId = report.id;
+      return layer;
+    }
+
+    let collapsedCategories = new Set();
+
+    function applyFilters() {
+      const query = elements.searchFilter.value.trim().toLowerCase();
+      const statusMode = elements.statusFilter.value || "all";
+      const dateWindowMs = {
+        "24h": 24 * 60 * 60 * 1000,
+        "7d": 7 * 24 * 60 * 60 * 1000,
+        "30d": 30 * 24 * 60 * 60 * 1000
+      }[elements.dateFilter.value];
+
+      filteredReports = reports.filter(report => {
+        const isFlagged = isReportFlagged(report);
+
+        if (statusMode === "regular" && isFlagged) return false;
+        if (statusMode === "suspicious" && !isFlagged) return false;
+
+        const createdMs = Number(report.createdAt) || new Date(report.createdAt).getTime();
+        if (dateWindowMs && Number.isFinite(createdMs) && (Date.now() - createdMs > dateWindowMs)) {
+          return false;
+        }
+
+        if (query) {
+          const matchText = `${report.text || ""} ${report.type || ""} ${report.id || ""} ${report.aiEvaluation?.reason || ""}`.toLowerCase();
+          if (!matchText.includes(query)) return false;
+        }
+
+        return true;
+      });
+
+      renderQueue();
+      renderMap();
+    }
+
+    function renderQueue() {
+      const pendingCount = reports.filter(r => getModerationStatus(r) === "pending").length;
+      const flaggedCount = reports.filter(r => isReportFlagged(r)).length;
+
+      elements.totalStat.textContent = reports.length;
+      elements.pendingStat.textContent = pendingCount;
+      elements.flaggedStat.textContent = flaggedCount;
+      elements.visibleStat.textContent = filteredReports.length;
+      elements.queueCount.textContent = `${filteredReports.length} report${filteredReports.length === 1 ? "" : "s"}`;
+      if (elements.queueExpandBadge) {
+        elements.queueExpandBadge.textContent = filteredReports.length;
+      }
+
+      // Calculate counts for each category
+      const counts = { all: filteredReports.length };
+      CATEGORIES.forEach(cat => { counts[cat.id] = 0; });
+      filteredReports.forEach(report => {
+        const cat = normalizeCategory(report.type);
+        if (counts[cat] !== undefined) counts[cat]++;
+        else counts["other"]++;
+      });
+
+      // Render vertical sideways categories sidebar
+      const allCategoryTabs = [
+        { id: "all", label: "🌐 All types", color: "#818cf8" },
+        ...CATEGORIES
+      ];
+
+      elements.catSidebar.innerHTML = allCategoryTabs.map(cat => {
+        const isActive = selectedCategory === cat.id;
+        const count = counts[cat.id] ?? 0;
+        return `
+          <button class="cat-btn ${isActive ? "active" : ""}" data-cat-select="${cat.id}">
+            <span class="cat-label">${escapeHtml(cat.label)}</span>
+            <span class="cat-badge">${count}</span>
+          </button>
+        `;
+      }).join("");
+
+      elements.catSidebar.querySelectorAll("[data-cat-select]").forEach(btn => {
+        btn.onclick = () => {
+          selectedCategory = btn.dataset.catSelect;
+          renderQueue();
+          renderMap();
+        };
+      });
+
+      // Filter displayed reports by selected category
+      const displayedReports = selectedCategory === "all"
+        ? filteredReports
+        : filteredReports.filter(r => normalizeCategory(r.type) === selectedCategory);
+
+      if (!displayedReports.length) {
+        const activeCatObj = allCategoryTabs.find(c => c.id === selectedCategory);
+        elements.reportList.innerHTML = `<div class="empty-state">No ${escapeHtml(activeCatObj ? activeCatObj.label : "reports")} in queue.</div>`;
+        return;
+      }
+
+      elements.reportList.innerHTML = displayedReports.map(report => {
+        const isSelected = selectedReport?.id === report.id;
+        const cat = normalizeCategory(report.type);
+        const catObj = CATEGORIES.find(c => c.id === cat) || { label: cat, color: "#6366f1" };
+        const modStatus = getModerationStatus(report);
+        const hasFlag = isReportFlagged(report);
+        const aiVerdict = report.aiEvaluation?.verdict;
+
+        return `
+          <button class="report-card ${isSelected ? "active" : ""}" data-id="${escapeHtml(report.id)}">
+            <div class="card-top">
+              <span class="type-badge-dot" style="background: ${catObj.color}"></span>
+              <span class="card-title">${escapeHtml(report.type || "Report")}</span>
+              <span class="card-time">${formatRelativeAge(report.createdAt)}</span>
+            </div>
+            <div class="card-copy">${escapeHtml(report.text || "No description provided.")}</div>
+            <div class="badges">
+              <span class="badge ${modStatus}">${modStatus}</span>
+              <span class="badge">${escapeHtml(report.severity || "unknown")}</span>
+              ${aiVerdict && aiVerdict !== "unverified" ? `<span class="badge ai-${escapeHtml(aiVerdict)}">AI: ${escapeHtml(aiVerdict.replace("_", " "))}</span>` : ""}
+              ${hasFlag ? '<span class="badge flag">Flagged</span>' : ""}
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      elements.reportList.querySelectorAll("[data-id]").forEach(card => {
+        card.onclick = () => selectReportById(card.dataset.id);
+      });
+    }
+
+    function renderMap() {
+      reportLayers.clearLayers();
+      const displayedReports = selectedCategory === "all"
+        ? filteredReports
+        : filteredReports.filter(r => normalizeCategory(r.type) === selectedCategory);
+      displayedReports.forEach(report => {
+        const isSelected = selectedReport?.id === report.id;
+        reportLayers.addLayer(createReportLayer(report, isSelected));
+      });
+    }
+
+    function centerOnReport(report) {
+      const geometry = report.geometry;
+      if (geometry?.type === "Polygon" && geometry.coordinates[0]?.length) {
+        map.fitBounds(geometry.coordinates[0].map(([lng, lat]) => [lat, lng]), {
+          padding: [50, 50],
+          maxZoom: 15
+        });
+      } else if (Number.isFinite(report.lat) && Number.isFinite(report.lng)) {
+        map.setView([report.lat, report.lng], 14);
+      }
+    }
+
+    function closeDetail() {
+      selectedReport = null;
+      cancelAreaEdit();
+      elements.detailContent.hidden = true;
+      elements.detailEmpty.hidden = false;
+      elements.detailPanel.classList.remove("open");
+      collapseDetail(true);
+      renderQueue();
+      renderMap();
+    }
+
+    function selectReportById(id) {
+      selectedReport = reports.find(r => r.id === id);
+      if (!selectedReport) {
+        closeDetail();
+        return;
+      }
+
+      cancelAreaEdit();
+      renderQueue();
+      renderMap();
+      centerOnReport(selectedReport);
+
+      elements.detailEmpty.hidden = true;
+      elements.detailContent.hidden = false;
+      elements.detailPanel.classList.add("open");
+      collapseDetail(false);
+
+      const cat = normalizeCategory(selectedReport.type);
+      elements.detailTitle.textContent = selectedReport.type || "Report";
+      elements.detailMeta.textContent = `${formatRelativeAge(selectedReport.createdAt)} · ID: ${selectedReport.id.slice(0, 12)}`;
+
+      const modStatus = getModerationStatus(selectedReport);
+      elements.detailModerationBadge.textContent = modStatus.toUpperCase();
+      elements.detailModerationBadge.className = `badge ${modStatus}`;
+
+      const incStatus = String(selectedReport.status || "active").toLowerCase();
+      elements.detailIncidentBadge.textContent = incStatus.toUpperCase();
+      elements.detailIncidentBadge.className = `badge`;
+
+      elements.editText.value = selectedReport.text || "";
+      elements.editType.value = cat;
+      elements.editSeverity.value = selectedReport.severity || "unknown";
+      elements.editStatus.value = incStatus;
+
+      // Render Attached Images
+      const images = Array.isArray(selectedReport.images) ? selectedReport.images : [];
+      if (images.length) {
+        elements.imageSection.hidden = false;
+        elements.imageGallery.innerHTML = images.map(img => {
+          const url = typeof img === "string" ? img : img.url;
+          const isVideo = /\.(mp4|webm|mov|mkv)$/i.test(url) || img?.type === "video";
+          if (isVideo) {
+            return `<a href="${escapeHtml(url)}" target="_blank" style="position:relative;display:inline-block;"><video class="image-thumb" src="${escapeHtml(url)}" muted preload="metadata" style="object-fit:cover;"></video><span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.75);color:#fff;padding:2px 5px;border-radius:4px;font-size:8.5px;font-weight:700;">▶ VIDEO</span></a>`;
+          }
+          return `<a href="${escapeHtml(url)}" target="_blank"><img class="image-thumb" src="${escapeHtml(url)}" alt="Report photo" loading="lazy"></a>`;
+        }).join("");
+      } else {
+        elements.imageSection.hidden = true;
+        elements.imageGallery.innerHTML = "";
+      }
+
+      // Render AI Evaluation Details
+      const ai = selectedReport.aiEvaluation;
+      if (ai && ai.verdict && ai.verdict !== "unverified") {
+        elements.aiVerdictBadge.textContent = `${ai.verdict.replace("_", " ").toUpperCase()} · ${Math.round(Number(ai.confidence) || 0)}%`;
+        elements.aiVerdictBadge.className = `badge ai-${ai.verdict}`;
+        elements.aiReasonText.textContent = ai.reason || "Evaluated by AI verification engine.";
+      } else {
+        elements.aiVerdictBadge.textContent = "UNVERIFIED";
+        elements.aiVerdictBadge.className = "badge";
+        elements.aiReasonText.textContent = "Not yet evaluated by AI.";
+      }
+
+      // Render removal requests
+      elements.requestList.innerHTML = selectedReport.removalRequests?.length
+        ? selectedReport.removalRequests.map(req => {
+            const status = req.status || "pending";
+            return `
+              <div class="request">
+                <span class="request-status ${status}">${escapeHtml(status)}</span>
+                <div><b>${escapeHtml(req.reason)}</b></div>
+                <time>${new Date(req.at).toLocaleString()}${req.resolvedAt ? ` · Resolved ${new Date(req.resolvedAt).toLocaleTimeString()}` : ""}</time>
+                ${status === "pending" ? `
+                  <div class="request-actions">
+                    <button type="button" class="btn btn-secondary" style="padding:4px 8px;font-size:9px;" onclick="resolveRemovalRequest('${escapeHtml(req.id)}', 'dismiss')">Dismiss</button>
+                    <button type="button" class="btn btn-danger" style="padding:4px 8px;font-size:9px;" onclick="resolveRemovalRequest('${escapeHtml(req.id)}', 'accept')">Accept Removal</button>
+                  </div>
+                ` : ""}
+              </div>
+            `;
+          }).join("")
+        : '<div class="count">No removal requests.</div>';
+
+      // Render audit log
+      elements.auditList.innerHTML = selectedReport.auditLog?.length
+        ? [...selectedReport.auditLog].reverse().map(log => `
+            <div class="audit">
+              <b>${escapeHtml(log.action)}</b>${log.note ? ` — ${escapeHtml(log.note)}` : ""}
+              <time>${escapeHtml(log.actor || "Moderator")} · ${new Date(log.at).toLocaleString()}</time>
+            </div>
+          `).join("")
+        : '<div class="count">No moderation actions yet.</div>';
+
+      renderNearbyReports();
+    }
+
+    function calculateDistanceKm(r1, r2) {
+      const getCoord = r => {
+        const ring = r.geometry?.coordinates?.[0];
+        if (ring?.length) {
+          return ring.reduce((sum, p) => [sum[0] + p[0] / ring.length, sum[1] + p[1] / ring.length], [0, 0]);
+        }
+        return [Number(r.lng || 0), Number(r.lat || 0)];
+      };
+      const c1 = getCoord(r1);
+      const c2 = getCoord(r2);
+      const dy = (c1[1] - c2[1]) * 111.32;
+      const dx = (c1[0] - c2[0]) * 111.32 * Math.cos(c1[1] * Math.PI / 180);
+      return Math.hypot(dx, dy);
+    }
+
+    function renderNearbyReports() {
+      if (!selectedReport) return;
+      const targetCat = normalizeCategory(selectedReport.type);
+      const nearby = reports
+        .filter(r => r.id !== selectedReport.id && normalizeCategory(r.type) === targetCat)
+        .map(r => ({ report: r, km: calculateDistanceKm(selectedReport, r) }))
+        .filter(item => item.km <= 25)
+        .sort((a, b) => a.km - b.km)
+        .slice(0, 6);
+
+      if (!nearby.length) {
+        elements.nearbyList.innerHTML = '<div class="count">No same-category reports within 25 km.</div>';
+        return;
+      }
+
+      elements.nearbyList.innerHTML = nearby.map(({ report, km }) => `
+        <button class="nearby" data-near-id="${escapeHtml(report.id)}">
+          <strong>${escapeHtml(report.text || report.type)}</strong>
+          <span>${km.toFixed(1)} km away · ${getModerationStatus(report)}</span>
+        </button>
+      `).join("");
+
+      elements.nearbyList.querySelectorAll("[data-near-id]").forEach(btn => {
+        btn.onclick = () => {
+          if (confirm("Merge the selected report into this nearby report?")) {
+            updateSelectedReport({
+              mergedInto: btn.dataset.nearId,
+              action: "merged",
+              note: `Merged into ${btn.dataset.nearId}`
+            });
+          }
+        };
+      });
+    }
+
+    function showToast(message) {
+      elements.toast.textContent = message;
+      elements.toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2400);
+    }
+
+    async function recheckAiVerification() {
+      if (!selectedReport) return;
+      elements.recheckAiBtn.disabled = true;
+      elements.recheckAiBtn.textContent = "Analyzing…";
+      try {
+        const res = await fetch(`/api/moderation/reports/${encodeURIComponent(selectedReport.id)}/verify-ai`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "AI check failed");
+
+        showToast(`AI Verdict: ${data.aiEvaluation.verdict.replace("_", " ")}`);
+        await loadReports(true);
+        selectReportById(selectedReport.id);
+      } catch (err) {
+        showToast(err.message);
+      } finally {
+        elements.recheckAiBtn.disabled = false;
+        elements.recheckAiBtn.textContent = "Re-check AI";
+      }
+    }
+
+    async function updateSelectedReport(patch) {
+      if (!selectedReport) return;
+      const targetId = selectedReport.id;
+      try {
+        const response = await fetch(`/api/moderation/reports/${encodeURIComponent(targetId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not update report");
+
+        const index = reports.findIndex(r => r.id === targetId);
+        if (index >= 0) reports[index] = data.report;
+        selectedReport = data.report;
+        showToast("Report updated successfully");
+        applyFilters();
+
+        if (filteredReports.some(r => r.id === targetId)) {
+          selectReportById(targetId);
+        } else if (filteredReports.length) {
+          selectReportById(filteredReports[0].id);
+        } else {
+          closeDetail();
+        }
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function deleteSelectedReport() {
+      if (!selectedReport) return;
+      const targetId = selectedReport.id;
+      if (!confirm("Permanently delete this community report and its attachments?")) return;
+
+      try {
+        const response = await fetch(`/api/moderation/reports/${encodeURIComponent(targetId)}`, {
+          method: "DELETE"
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not delete report");
+
+        reports = reports.filter(r => r.id !== targetId);
+        showToast("Report deleted permanently");
+        applyFilters();
+
+        if (filteredReports.length) selectReportById(filteredReports[0].id);
+        else closeDetail();
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function resolveRemovalRequest(reqId, action) {
+      if (!selectedReport) return;
+      const targetId = selectedReport.id;
+      const promptText = action === "accept"
+        ? "Accept removal request and mark report as rejected?"
+        : "Dismiss this removal request?";
+      if (!confirm(promptText)) return;
+
+      try {
+        const response = await fetch(`/api/moderation/reports/${encodeURIComponent(targetId)}/removal-requests/${encodeURIComponent(reqId)}/resolve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not resolve removal request");
+
+        const index = reports.findIndex(r => r.id === targetId);
+        if (index >= 0) reports[index] = data.report;
+        selectedReport = data.report;
+        showToast(`Removal request ${action === "accept" ? "accepted" : "dismissed"}.`);
+        applyFilters();
+        selectReportById(targetId);
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+    window.resolveRemovalRequest = resolveRemovalRequest;
+
+    // Mapped Area Editing
+    function beginAreaEdit() {
+      const ring = selectedReport?.geometry?.type === "Polygon" ? selectedReport.geometry.coordinates[0] : null;
+      if (!ring?.length) {
+        showToast("This report does not have an editable polygon area.");
+        return;
+      }
+      editCoords = ring.slice(0, -1).map(p => [...p]);
+      elements.editTools.classList.add("active");
+      elements.mapHelp.textContent = "Drag boundary points, or click map to add points";
+      renderEditorVertices();
+    }
+
+    function renderEditorVertices() {
+      editVertices.clearLayers();
+      if (selectedLayer && editCoords.length >= 2) {
+        selectedLayer.setLatLngs(editCoords.map(([lng, lat]) => [lat, lng]));
+      }
+
+      const vertexIcon = L.divIcon({
+        className: "",
+        html: '<div class="vertex"></div>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+
+      editCoords.forEach((point, idx) => {
+        const marker = L.marker([point[1], point[0]], {
+          icon: vertexIcon,
+          draggable: true,
+          bubblingMouseEvents: false
+        }).addTo(editVertices);
+
+        marker.on("drag", () => {
+          const latLng = marker.getLatLng();
+          editCoords[idx] = [latLng.lng, latLng.lat];
+          if (selectedLayer) {
+            selectedLayer.setLatLngs(editCoords.map(([lng, lat]) => [lat, lng]));
+          }
+        });
+
+        marker.on("dblclick", e => {
+          L.DomEvent.stop(e);
+          if (editCoords.length > 3) {
+            editCoords.splice(idx, 1);
+            renderEditorVertices();
+          }
+        });
+      });
+    }
+
+    function cancelAreaEdit() {
+      editVertices.clearLayers();
+      editCoords = null;
+      elements.editTools.classList.remove("active");
+      elements.mapHelp.textContent = "Select a report to inspect its mapped area";
+    }
+
+    function saveAreaEdit() {
+      if (!editCoords || editCoords.length < 3) {
+        showToast("An area polygon requires at least 3 points.");
+        return;
+      }
+      const closedRing = [...editCoords, editCoords[0]];
+      updateSelectedReport({
+        geometry: { type: "Polygon", coordinates: [closedRing] },
+        action: "area-edited"
+      }).then(cancelAreaEdit);
+    }
+
+    // Event Bindings
+    map.on("click", e => {
+      if (!editCoords) return;
+      editCoords.push([e.latlng.lng, e.latlng.lat]);
+      renderEditorVertices();
+    });
+
+    elements.approveBtn.onclick = () => {
+      updateSelectedReport({
+        moderationStatus: "approved",
+        action: "approved",
+        note: "Approved by moderator"
+      });
+    };
+
+    elements.rejectBtn.onclick = () => {
+      updateSelectedReport({
+        moderationStatus: "rejected",
+        action: "rejected",
+        note: "Rejected by moderator"
+      });
+    };
+
+    elements.setPendingBtn.onclick = () => {
+      updateSelectedReport({
+        moderationStatus: "pending",
+        action: "returned-to-pending",
+        note: "Marked pending review"
+      });
+    };
+
+    elements.saveBtn.onclick = () => {
+      const selectedCat = CATEGORIES.find(c => c.id === elements.editType.value);
+      updateSelectedReport({
+        type: selectedCat ? selectedCat.label : elements.editType.value,
+        text: elements.editText.value.trim(),
+        severity: elements.editSeverity.value,
+        status: elements.editStatus.value,
+        action: "details-edited"
+      });
+    };
+
+    elements.editAreaBtn.onclick = beginAreaEdit;
+    elements.undoPointBtn.onclick = () => {
+      if (editCoords?.length > 3) {
+        editCoords.pop();
+        renderEditorVertices();
+      }
+    };
+    elements.cancelAreaBtn.onclick = () => {
+      cancelAreaEdit();
+      renderMap();
+      if (selectedReport) centerOnReport(selectedReport);
+    };
+    elements.saveAreaBtn.onclick = saveAreaEdit;
+    elements.deleteBtn.onclick = deleteSelectedReport;
+    elements.closeDetailBtn.onclick = closeDetail;
+    elements.recheckAiBtn.onclick = recheckAiVerification;
+
+    [elements.statusFilter, elements.dateFilter].forEach(el => {
+      if (el) el.addEventListener("change", applyFilters);
+    });
+    let searchDebounceTimer = null;
+    if (elements.searchFilter) {
+      elements.searchFilter.addEventListener("input", () => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(applyFilters, 120);
+      });
+    }
+
+    // Data Loading with Signature Diffing (Optimizes performance & battery for low-data devices)
+    let lastReportsSignature = "";
+    function getReportsSignature(list) {
+      return (list || []).length + ":" + (list || []).map(r => `${r.id}:${r.updatedAt || r.createdAt}:${r.status}:${r.verified}:${r.removalRequests?.length || 0}`).join(";");
+    }
+
+    async function loadReports(isBackground = false) {
+      try {
+        const response = await fetch(`/api/moderation/reports?_t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+        });
+        if (response.status === 401) {
+          window.location.assign("/staff?returnTo=/moderation");
+          return;
+        }
+        if (!response.ok) throw new Error("Failed to fetch reports");
+        const nextReports = await response.json();
+        const newSig = getReportsSignature(nextReports);
+        const dataChanged = newSig !== lastReportsSignature;
+
+        if (dataChanged || !isBackground) {
+          lastReportsSignature = newSig;
+          reports = nextReports;
+          applyFilters();
+        }
+
+        if (selectedReport) {
+          const updated = reports.find(r => r.id === selectedReport.id);
+          if (updated) {
+            selectedReport = updated;
+            const modStatus = getModerationStatus(selectedReport);
+            elements.detailModerationBadge.textContent = modStatus.toUpperCase();
+            elements.detailModerationBadge.className = `badge ${modStatus}`;
+            const incStatus = String(selectedReport.status || "active").toLowerCase();
+            elements.detailIncidentBadge.textContent = incStatus.toUpperCase();
+            if (!editCoords) {
+              elements.editText.value = selectedReport.text || "";
+              elements.editType.value = normalizeCategory(selectedReport.type);
+              elements.editSeverity.value = selectedReport.severity || "unknown";
+              elements.editStatus.value = incStatus;
+            }
+          }
+        }
+      } catch (error) {
+        if (!isBackground) {
+          elements.reportList.innerHTML = '<div class="empty">Could not load reports.</div>';
+          showToast(error.message);
+        }
+      }
+    }
+
+    initResizers();
+    loadReports();
+    setInterval(() => loadReports(true), 3000);
+    window.addEventListener("resize", () => setTimeout(() => map.invalidateSize(), 100));
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      setTimeout(() => map.invalidateSize(), 100);
+      setTimeout(() => map.invalidateSize(), 350);
+    });
+  </script>
+</body>
+</html>

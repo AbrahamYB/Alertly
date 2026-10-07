@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Alertly — Hazard Administration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --panel: rgba(15, 19, 28, 0.9);
+      --card: rgba(255, 255, 255, 0.055);
+      --line: rgba(255, 255, 255, 0.12);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --good: #10b981;
+      --bad: #ef4444;
+      --warn: #f59e0b;
+      --shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .shell {
+      height: 100dvh;
+      padding: 6px;
+      display: grid;
+      grid-template-rows: 46px 1fr;
+      gap: 6px;
+      background: radial-gradient(circle at 50% -20%, #1e2642, transparent 42%), var(--bg);
+    }
+
+    .glass {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent), var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(24px) saturate(150%);
+    }
+
+    header {
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      padding: 5px 8px;
+      gap: 8px;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #f97316, #dc2626);
+      font-size: 15px;
+    }
+
+    h1 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .sub {
+      font-size: 9.5px;
+      color: var(--muted);
+    }
+
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .sync-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      font-size: 9.5px;
+      color: #6ee7b7;
+      font-weight: 700;
+    }
+
+    .sync-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .nav, .sync-btn {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--card);
+      padding: 0 10px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+
+    .nav:hover, .sync-btn:hover {
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 290px 1fr 320px;
+      gap: 6px;
+    }
+
+    .pane {
+      border-radius: 15px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .list-pane {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .list-head {
+      padding: 8px 9px 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .search-row input {
+      width: 100%;
+      height: 31px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #090c13;
+      padding: 0 8px;
+      font-size: 10.5px;
+      outline: none;
+    }
+
+    .search-row input:focus {
+      border-color: #818cf8;
+    }
+
+    .type-chips {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 3px;
+      scrollbar-width: none;
+    }
+
+    .type-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 3px 7px;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    .chip.active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: #818cf8;
+      color: #fff;
+    }
+
+    .hazard-list {
+      overflow-y: auto;
+      padding: 2px 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .cat-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .cat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      background: rgba(255, 255, 255, 0.025);
+      border-radius: 7px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .cat-header:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .cat-count {
+      background: rgba(148, 163, 184, 0.15);
+      padding: 1px 5px;
+      border-radius: 5px;
+      font-size: 8.5px;
+      color: var(--text);
+    }
+
+    .hazard-card {
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: var(--card);
+      padding: 7px 8px;
+      margin: 1px 0;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    .hazard-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .hazard-card.active {
+      border-color: #818cf8;
+      background: rgba(99, 102, 241, 0.18);
+    }
+
+    .card-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      background: rgba(99, 102, 241, 0.2);
+      font-size: 11px;
+      flex: none;
+    }
+
+    .title {
+      font-size: 10px;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .meta {
+      font-size: 8px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .badges {
+      display: flex;
+      gap: 3px;
+      margin-top: 4px;
+    }
+
+    .badge {
+      font-size: 7px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 2px 4px;
+      border-radius: 4px;
+      background: rgba(148, 163, 184, 0.14);
+    }
+
+    .badge.active { color: #6ee7b7; }
+    .badge.monitoring { color: #fbbf24; }
+    .badge.resolved { color: #94a3b8; }
+
+    .empty {
+      padding: 30px 15px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .map-pane {
+      position: relative;
+    }
+
+    .map {
+      height: 100%;
+      width: 100%;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 7px !important;
+      opacity: 0.7;
+    }
+
+    .hazard-symbol-wrap {
+      background: transparent !important;
+      border: 0 !important;
+    }
+
+    .hazard-symbol {
+      --hazard-color: #6366f1;
+      position: relative;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      border-radius: 8px 8px 8px 2px;
+      background: var(--hazard-color);
+      box-shadow: 0 3px 9px rgba(0, 0, 0, 0.45);
+      color: #fff;
+      font: 13px/1 system-ui, sans-serif;
+      transform: rotate(-8deg);
+      transition: transform 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+
+    .hazard-symbol > span {
+      transform: rotate(8deg);
+    }
+
+    .hazard-symbol.selected {
+      border-color: #fff;
+      box-shadow: 0 0 14px #818cf8, 0 4px 12px rgba(0, 0, 0, 0.6);
+      transform: scale(1.25) rotate(-8deg);
+      z-index: 999;
+    }
+
+    .editor {
+      padding: 10px;
+      overflow: auto;
+    }
+
+    .editor-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 7px;
+    }
+
+    .editor-head h2 {
+      font-size: 12px;
+      margin: 0;
+    }
+
+    .editor-head .badge {
+      margin-left: auto;
+    }
+
+    .field {
+      display: grid;
+      gap: 4px;
+      margin: 6px 0;
+    }
+
+    .field label {
+      font-size: 8px;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #080b12;
+      padding: 7px;
+      font-size: 10px;
+      outline: none;
+    }
+
+    .field textarea {
+      min-height: 48px;
+      resize: vertical;
+    }
+
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: #818cf8;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #cbd5e1;
+      font-size: 9px;
+      margin: 7px 0;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-top: 7px;
+    }
+
+    .btn {
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--card);
+      font-size: 9px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: filter 0.12s;
+    }
+
+    .btn:hover {
+      filter: brightness(1.15);
+    }
+
+    .btn.primary { background: #4f46e5; }
+    .btn.good {
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.15);
+    }
+    .btn.warn { color: #fbbf24; }
+    .btn.bad {
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.14);
+    }
+    .wide { grid-column: 1 / -1; }
+
+    .section {
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+
+    .section-title {
+      font-size: 8px;
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .audit {
+      padding: 6px;
+      margin-top: 4px;
+      background: var(--card);
+      border-radius: 8px;
+      font-size: 8px;
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 9999;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: #111827;
+      border: 1px solid var(--line);
+      font-size: 10px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 1050px) {
+      .workspace { grid-template-columns: 250px 1fr; }
+      .editor {
+        position: fixed;
+        right: 6px;
+        top: 58px;
+        bottom: 6px;
+        width: 300px;
+        z-index: 800;
+        transform: translateX(calc(100% + 15px));
+        transition: transform 0.25s;
+      }
+      .editor.open { transform: none; }
+      .sub { display: none; }
+    }
+
+    @media (max-width: 680px) {
+      .shell { padding: 5px; grid-template-rows: 44px 1fr; }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: 34vh 1fr; }
+      .map-pane { grid-row: 1; }
+      .list-pane { grid-row: 2; }
+      .brand-text { display: none; }
+      .nav span { display: none; }
+      .nav { width: 34px; padding: 0; }
+      .editor { top: 5px; right: 5px; bottom: 5px; width: calc(100vw - 10px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="glass">
+      <div class="logo">🛡️</div>
+      <div class="brand-text">
+        <h1>Hazard Administration</h1>
+        <div class="sub">Unified automated monitoring system</div>
+      </div>
+      <div class="header-actions">
+        <div class="sync-status" title="Live background hazard checker and sync active">
+          <span class="sync-dot"></span>
+          <span id="syncLabel">AI Monitor: Synced</span>
+        </div>
+        <button class="sync-btn" id="syncNowBtn" title="Trigger immediate hazard sync">Sync all</button>
+        <a class="nav" href="/">Main map</a>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="pane list-pane glass">
+        <div class="list-head">
+          <div class="search-row">
+            <input id="search" placeholder="Search all hazards…">
+          </div>
+          <div class="type-chips" id="typeChips">
+            <button class="chip active" data-cat="all">All <b id="totalChipCount">0</b></button>
+          </div>
+        </div>
+        <div class="hazard-list" id="hazardList"></div>
+      </aside>
+
+      <section class="pane map-pane glass">
+        <div class="map" id="map"></div>
+      </section>
+
+      <aside class="pane editor glass" id="editor">
+        <div class="editor-head">
+          <h2 id="editorTitle">Edit hazard</h2>
+          <span class="badge" id="stateBadge">SELECT</span>
+        </div>
+
+        <div class="field">
+          <label for="title">Title</label>
+          <input id="title" placeholder="Clear public title">
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <label for="type">Category</label>
+            <select id="type">
+              <option value="flood">Flood</option>
+              <option value="fire">Fire</option>
+              <option value="storm">Storm / Cyclone</option>
+              <option value="volcano">Volcano</option>
+              <option value="landslide">Landslide</option>
+              <option value="earthquake">Earthquake</option>
+              <option value="drought">Drought</option>
+              <option value="heatwave">Extreme heat</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="severity">Severity</label>
+            <select id="severity">
+              <option value="unknown">Unknown</option>
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <label for="confidence">Confidence</label>
+            <select id="confidence">
+              <option value="unverified">Unverified</option>
+              <option value="possible">Possible</option>
+              <option value="probable">Probable</option>
+              <option value="confirmed">Confirmed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="status">Status</label>
+            <select id="status">
+              <option value="active">Active</option>
+              <option value="monitoring">Monitoring</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="description">Description</label>
+          <textarea id="description"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="instructions">Safety Instructions</label>
+          <textarea id="instructions"></textarea>
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <label for="source">Source</label>
+            <input id="source" value="admin">
+          </div>
+          <div class="field">
+            <label for="sourceEventId">Source Event ID</label>
+            <input id="sourceEventId">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="sourceUrl">Official Source URL</label>
+          <input id="sourceUrl" type="url" placeholder="https://…">
+        </div>
+
+        <div class="field">
+          <label for="expiresAt">Expiration Override</label>
+          <input id="expiresAt" type="datetime-local">
+        </div>
+
+        <label class="check">
+          <input id="estimated" type="checkbox"> Location or area is estimated
+        </label>
+
+        <div class="actions">
+          <button class="btn primary wide" id="saveBtn">Save hazard</button>
+          <button class="btn good" id="activeBtn">Mark active</button>
+          <button class="btn warn" id="monitorBtn">Monitoring</button>
+          <button class="btn" id="resolveBtn">Resolved</button>
+          <button class="btn" id="mergeBtn">Merge</button>
+          <button class="btn bad wide" id="removeBtn">Remove incorrect hazard</button>
+          <button class="btn wide" id="closeBtn">Close panel</button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Audit history</div>
+          <div id="audit"></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const HAZARD_ICONS = {
+      flood: "🌊", fire: "🔥", storm: "🌀", volcano: "🌋",
+      landslide: "⛰️", earthquake: "🫨", drought: "🏜️", heatwave: "🌡️", other: "⚠️"
+    };
+
+    const CATEGORY_NAMES = {
+      earthquake: "Earthquake / Seismic",
+      fire: "Wildfire / Thermal",
+      flood: "Flooded Areas",
+      storm: "Storms & Cyclones",
+      volcano: "Volcanic Activity",
+      landslide: "Landslides",
+      drought: "Drought & Water",
+      heatwave: "Extreme Heat",
+      other: "Other Hazards"
+    };
+
+    const HAZARD_COLORS = {
+      flood: "#0ea5e9", fire: "#ef4444", storm: "#818cf8", volcano: "#dc2626",
+      landslide: "#a16207", earthquake: "#71717a", drought: "#f59e0b", heatwave: "#f97316", other: "#6366f1"
+    };
+
+    // DOM Elements
+    const elements = {
+      search: document.getElementById("search"),
+      typeChips: document.getElementById("typeChips"),
+      totalChipCount: document.getElementById("totalChipCount"),
+      hazardList: document.getElementById("hazardList"),
+      editor: document.getElementById("editor"),
+      editorTitle: document.getElementById("editorTitle"),
+      stateBadge: document.getElementById("stateBadge"),
+      title: document.getElementById("title"),
+      type: document.getElementById("type"),
+      severity: document.getElementById("severity"),
+      confidence: document.getElementById("confidence"),
+      status: document.getElementById("status"),
+      description: document.getElementById("description"),
+      instructions: document.getElementById("instructions"),
+      source: document.getElementById("source"),
+      sourceEventId: document.getElementById("sourceEventId"),
+      sourceUrl: document.getElementById("sourceUrl"),
+      expiresAt: document.getElementById("expiresAt"),
+      estimated: document.getElementById("estimated"),
+      saveBtn: document.getElementById("saveBtn"),
+      activeBtn: document.getElementById("activeBtn"),
+      monitorBtn: document.getElementById("monitorBtn"),
+      resolveBtn: document.getElementById("resolveBtn"),
+      mergeBtn: document.getElementById("mergeBtn"),
+      removeBtn: document.getElementById("removeBtn"),
+      closeBtn: document.getElementById("closeBtn"),
+      syncNowBtn: document.getElementById("syncNowBtn"),
+      syncLabel: document.getElementById("syncLabel"),
+      audit: document.getElementById("audit"),
+      toast: document.getElementById("toast")
+    };
+
+    const map = L.map("map", { zoomControl: false }).setView([15.5, -88], 6);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "&copy; Esri"
+    }).addTo(map);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "Labels &copy; Esri"
+    }).addTo(map);
+
+    const layerGroup = L.featureGroup().addTo(map);
+    let hazards = [];
+    let selectedHazard = null;
+    let activeFilter = "all";
+    let collapsedCategories = new Set();
+    let toastTimer = null;
+
+    function escapeHtml(str) {
+      return String(str ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      }[char]));
+    }
+
+    function getStyle(hazard, isSelected = false) {
+      const color = HAZARD_COLORS[hazard.properties.hazard] || HAZARD_COLORS.other;
+      return {
+        color: isSelected ? "#ffffff" : color,
+        weight: isSelected ? 4 : 2.5,
+        fillColor: color,
+        fillOpacity: isSelected ? 0.5 : 0.25
+      };
+    }
+
+    function normalizeHazardCategory(typeStr) {
+      const s = String(typeStr || "").toLowerCase();
+      if (s.includes("fire") || s.includes("thermal") || s.includes("burn") || s.includes("🔥")) return "fire";
+      if (s.includes("flood") || s.includes("rain") || s.includes("water") || s.includes("surge") || s.includes("🌊")) return "flood";
+      if (s.includes("volcan") || s.includes("lava") || s.includes("eruption") || s.includes("ash") || s.includes("🌋")) return "volcano";
+      if (s.includes("landslide") || s.includes("mudslide") || s.includes("debris") || s.includes("rockfall") || s.includes("⛰️") || s.includes("🏔️")) return "landslide";
+      if (s.includes("earthquake") || s.includes("seismic") || s.includes("tremor") || s.includes("quake") || s.includes("🫨") || s.includes("⚡")) return "earthquake";
+      if (s.includes("storm") || s.includes("cyclone") || s.includes("hurricane") || s.includes("typhoon") || s.includes("tornado") || s.includes("wind") || s.includes("🌪️") || s.includes("🌀")) return "storm";
+      if (s.includes("drought") || s.includes("arid") || s.includes("dry") || s.includes("🌵") || s.includes("🏜️")) return "drought";
+      if (s.includes("heat") || s.includes("warm") || s.includes("temperature") || s.includes("🌡️")) return "heatwave";
+      return "other";
+    }
+
+    function createHazardLayer(hazard) {
+      const geometry = hazard.geometry;
+      if (!geometry) return L.layerGroup();
+
+      const isSelected = selectedHazard?.id === hazard.id;
+      const hazardType = normalizeHazardCategory(hazard.properties.hazard);
+      const color = HAZARD_COLORS[hazardType] || HAZARD_COLORS.other;
+
+      let layer;
+      if (geometry.type === "Point") {
+        layer = L.marker([geometry.coordinates[1], geometry.coordinates[0]], {
+          keyboard: true,
+          riseOnHover: true,
+          title: hazard.properties.title || "",
+          icon: L.divIcon({
+            className: "hazard-symbol-wrap",
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${HAZARD_ICONS[hazardType] || "⚠️"}</span></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        });
+      } else if (geometry.type === "LineString") {
+        layer = L.polyline(geometry.coordinates.map(([lng, lat]) => [lat, lng]), getStyle(hazard, isSelected));
+      } else {
+        layer = L.polygon((geometry.coordinates[0] || []).map(([lng, lat]) => [lat, lng]), getStyle(hazard, isSelected));
+      }
+
+      layer.on("click", () => selectHazardById(hazard.id));
+      layer._hazardId = hazard.id;
+      return layer;
+    }
+
+    function renderCategoryChips() {
+      const counts = {};
+      hazards.forEach(h => {
+        const cat = normalizeHazardCategory(h.properties.hazard);
+        counts[cat] = (counts[cat] || 0) + 1;
+      });
+
+      elements.totalChipCount.textContent = hazards.length;
+      const activeKeys = Object.keys(CATEGORY_NAMES).filter(k => counts[k] > 0);
+
+      const allButton = `<button class="chip ${activeFilter === "all" ? "active" : ""}" data-cat="all">All <b>${hazards.length}</b></button>`;
+      const categoryButtons = activeKeys.map(k => `
+        <button class="chip ${activeFilter === k ? "active" : ""}" data-cat="${k}">
+          ${CATEGORY_NAMES[k].split(" ")[0]} <b>${counts[k]}</b>
+        </button>
+      `).join("");
+
+      elements.typeChips.innerHTML = allButton + categoryButtons;
+      elements.typeChips.querySelectorAll("[data-cat]").forEach(btn => {
+        btn.onclick = () => {
+          activeFilter = btn.dataset.cat;
+          renderCategoryChips();
+          renderHazardList();
+        };
+      });
+    }
+
+    function renderHazardList() {
+      const query = elements.search.value.toLowerCase().trim();
+      const filtered = hazards.filter(h => {
+        const cat = normalizeHazardCategory(h.properties.hazard);
+        const text = `${h.properties.title || ""} ${cat} ${h.properties.source || ""} ${h.properties.description || ""}`.toLowerCase();
+        const matchesQuery = !query || text.includes(query);
+        const matchesCat = activeFilter === "all" || cat === activeFilter;
+        return matchesQuery && matchesCat;
+      });
+
+      if (!filtered.length) {
+        elements.hazardList.innerHTML = '<div class="empty">No hazards found.</div>';
+        return;
+      }
+
+      const groups = {};
+      filtered.forEach(h => {
+        const cat = normalizeHazardCategory(h.properties.hazard);
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(h);
+      });
+
+      elements.hazardList.innerHTML = Object.entries(groups).map(([catKey, items]) => {
+        const catLabel = CATEGORY_NAMES[catKey] || catKey;
+        const isCollapsed = collapsedCategories.has(catKey) && !query;
+        const cardsHtml = items.map(h => `
+          <button class="hazard-card ${selectedHazard?.id === h.id ? "active" : ""}" data-id="${escapeHtml(h.id)}">
+            <div class="card-row">
+              <span class="icon">${HAZARD_ICONS[normalizeHazardCategory(h.properties.hazard)] || "⚠️"}</span>
+              <span class="title">${escapeHtml(h.properties.title)}</span>
+            </div>
+            <div class="meta">${escapeHtml(h.properties.source)} · ${new Date(h.properties.lastUpdatedAt || h.properties.detectedAt).toLocaleDateString()}</div>
+            <div class="badges">
+              <span class="badge ${h.properties.status}">${h.properties.status}</span>
+              <span class="badge">${h.properties.severity}</span>
+              <span class="badge">${h.properties.confidence}</span>
+            </div>
+          </button>
+        `).join("");
+
+        return `
+          <div class="cat-group">
+            <div class="cat-header" data-cat-toggle="${catKey}">
+              <span>${escapeHtml(catLabel)}</span>
+              <span class="cat-count">${items.length} ${isCollapsed ? "▼" : "▲"}</span>
+            </div>
+            <div class="cat-body" ${isCollapsed ? "hidden" : ""}>${cardsHtml}</div>
+          </div>
+        `;
+      }).join("");
+
+      elements.hazardList.querySelectorAll("[data-cat-toggle]").forEach(hdr => {
+        hdr.onclick = () => {
+          const cat = hdr.dataset.catToggle;
+          if (collapsedCategories.has(cat)) collapsedCategories.delete(cat);
+          else collapsedCategories.add(cat);
+          renderHazardList();
+        };
+      });
+
+      elements.hazardList.querySelectorAll("[data-id]").forEach(card => {
+        card.onclick = () => selectHazardById(card.dataset.id);
+      });
+    }
+
+    function renderMap() {
+      layerGroup.clearLayers();
+      hazards.forEach(h => layerGroup.addLayer(createHazardLayer(h)));
+    }
+
+    function fillEditor(hazard) {
+      elements.title.value = hazard?.properties.title || "";
+      elements.type.value = normalizeHazardCategory(hazard?.properties.hazard);
+      elements.severity.value = hazard?.properties.severity || "medium";
+      elements.confidence.value = hazard?.properties.confidence || "unverified";
+      elements.status.value = hazard?.properties.status || "active";
+      elements.description.value = hazard?.properties.description || "";
+      elements.instructions.value = hazard?.properties.instructions || "";
+      elements.source.value = hazard?.properties.source || "admin";
+      elements.sourceEventId.value = hazard?.properties.sourceEventId || "";
+      elements.sourceUrl.value = hazard?.properties.sourceUrl || "";
+      elements.expiresAt.value = hazard?.properties.expiresAt ? new Date(hazard.properties.expiresAt).toISOString().slice(0, 16) : "";
+      elements.estimated.checked = Boolean(hazard?.properties.locationEstimated);
+
+      elements.stateBadge.textContent = hazard ? hazard.properties.status : "SELECT";
+      elements.stateBadge.className = `badge ${hazard?.properties.status || ""}`;
+
+      elements.audit.innerHTML = hazard?.properties.auditLog?.length
+        ? [...hazard.properties.auditLog].reverse().map(log => `
+            <div class="audit">
+              <b>${escapeHtml(log.action)}</b><br>
+              ${new Date(log.at).toLocaleString()}
+            </div>
+          `).join("")
+        : '<div class="meta">No changes recorded yet.</div>';
+    }
+
+    function selectHazardById(id) {
+      selectedHazard = hazards.find(h => h.id === id);
+      if (!selectedHazard) return;
+
+      elements.editorTitle.textContent = "Edit hazard";
+      fillEditor(selectedHazard);
+      elements.editor.classList.add("open");
+
+      renderHazardList();
+      renderMap();
+
+      const layer = [...layerGroup.getLayers()].find(l => l._hazardId === selectedHazard.id);
+      if (layer?.getBounds) {
+        map.fitBounds(layer.getBounds(), { padding: [50, 50], maxZoom: 13 });
+      } else if (layer?.getLatLng) {
+        map.setView(layer.getLatLng(), 12);
+      }
+    }
+
+    function collectFormProps() {
+      return {
+        hazard: elements.type.value,
+        title: elements.title.value.trim(),
+        severity: elements.severity.value,
+        confidence: elements.confidence.value,
+        status: elements.status.value,
+        source: elements.source.value.trim() || "admin",
+        sourceType: "admin verified",
+        sourceUrl: elements.sourceUrl.value.trim(),
+        sourceEventId: elements.sourceEventId.value.trim(),
+        description: elements.description.value.trim(),
+        instructions: elements.instructions.value.trim(),
+        expiresAt: elements.expiresAt.value ? new Date(elements.expiresAt.value).toISOString() : null,
+        locationEstimated: elements.estimated.checked
+      };
+    }
+
+    function showToast(message) {
+      elements.toast.textContent = message;
+      elements.toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2300);
+    }
+
+    async function saveHazard() {
+      if (!selectedHazard) return showToast("Select a hazard to edit.");
+      if (!elements.title.value.trim()) return showToast("A title is required.");
+
+      try {
+        const response = await fetch(`/api/admin/hazards/${encodeURIComponent(selectedHazard.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ properties: collectFormProps(), action: "hazard-edited" })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not save hazard");
+
+        showToast("Hazard saved successfully");
+        await loadHazards(true);
+        selectHazardById((data.hazard || data).id);
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function patchStatus(statusValue) {
+      if (!selectedHazard) return;
+      elements.status.value = statusValue;
+      try {
+        const response = await fetch(`/api/admin/hazards/${encodeURIComponent(selectedHazard.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ properties: { status: statusValue }, action: `marked-${statusValue}` })
+        });
+        if (response.ok) {
+          showToast(`Marked as ${statusValue}`);
+          await loadHazards(true);
+          selectHazardById(selectedHazard.id);
+        }
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function removeHazard() {
+      if (!selectedHazard || !confirm(`Permanently remove “${selectedHazard.properties.title}”?`)) return;
+      try {
+        const response = await fetch(`/api/admin/hazards/${encodeURIComponent(selectedHazard.id)}`, {
+          method: "DELETE"
+        });
+        if (response.ok) {
+          selectedHazard = null;
+          elements.editor.classList.remove("open");
+          showToast("Hazard removed");
+          loadHazards(true);
+        }
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function mergeHazard() {
+      if (!selectedHazard) return;
+      const choices = hazards.filter(h => h.id !== selectedHazard.id);
+      const targetPrompt = prompt(`Merge into hazard ID:\n${choices.slice(0, 8).map(h => `${h.id} — ${h.properties.title}`).join("\n")}`);
+      if (!targetPrompt) return;
+
+      try {
+        const response = await fetch(`/api/admin/hazards/${encodeURIComponent(selectedHazard.id)}/merge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetId: targetPrompt.trim() })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Merge failed");
+
+        selectedHazard = null;
+        elements.editor.classList.remove("open");
+        showToast("Hazards merged successfully");
+        loadHazards(true);
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function loadHazards(isManual = false) {
+      try {
+        const response = await fetch("/api/admin/hazards");
+        if (response.status === 401) {
+          window.location.assign("/staff?returnTo=/hazard-admin");
+          return;
+        }
+        if (!response.ok) throw new Error("Failed to fetch hazard data");
+        const data = await response.json();
+        hazards = data.features || [];
+        renderCategoryChips();
+        renderHazardList();
+        renderMap();
+        elements.syncLabel.textContent = `AI Monitor: ${hazards.length} synced`;
+        if (isManual) showToast("Hazard data synchronized");
+      } catch (error) {
+        elements.syncLabel.textContent = "AI Monitor: Syncing…";
+      }
+    }
+
+    elements.saveBtn.onclick = saveHazard;
+    elements.activeBtn.onclick = () => patchStatus("active");
+    elements.monitorBtn.onclick = () => patchStatus("monitoring");
+    elements.resolveBtn.onclick = () => patchStatus("resolved");
+    elements.removeBtn.onclick = removeHazard;
+    elements.mergeBtn.onclick = mergeHazard;
+    elements.closeBtn.onclick = () => elements.editor.classList.remove("open");
+    elements.syncNowBtn.onclick = () => loadHazards(true);
+    elements.search.oninput = renderHazardList;
+
+    loadHazards();
+    setInterval(() => loadHazards(false), 4000);
+    window.addEventListener("resize", () => map.invalidateSize());
+  </script>
+</body>
+</html>

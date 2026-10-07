@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alertly.live/schemas/installation-v1.json",
+  "title": "Alertly installation configuration",
+  "type": "object",
+  "required": ["schemaVersion", "revision", "choices", "detected", "services", "installState"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "choices": {
+      "type": "object",
+      "required": ["profile", "method", "acceleration"],
+      "properties": {
+        "profile": { "enum": ["demo", "organization"] },
+        "method": { "enum": ["docker", "native", "split"] },
+        "acceleration": { "enum": ["cpu", "nvidia", "amd", "intel", "remote"] }
+      },
+      "additionalProperties": false
+    },
+    "installState": { "enum": ["configured", "applying", "installed", "failed"] }
+  }
+}
+
