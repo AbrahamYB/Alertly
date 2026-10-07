@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import fs from "fs";
 import multer from "multer";
-import { applyReportAiEvaluation, groupNearbyPointHazards, normalizeCollection, normalizeHazard, normalizeReport, sanitizeReportForPublic } from "./lib/domain.js";
+import { applyReportAiEvaluation, groupNearbyPointHazards, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
 import { readProviderStatus } from "./lib/provider-status.js";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { evaluateReportWithAI } from "./lib/report-moderator-ai.js";
@@ -225,6 +225,21 @@ function saveReports(reports) {
     throw err;
   }
 }
+
+function reconcileStoredReportVisibility() {
+  const reports = getReports();
+  let changed = false;
+  const reconciled = reports.map((report) => {
+    const next = reconcileReportVisibility(report);
+    if (next.publiclyVisible !== report.publiclyVisible
+      || next.moderationStatus !== report.moderationStatus
+      || next.verified !== report.verified) changed = true;
+    return next;
+  });
+  if (changed) saveReports(reconciled);
+}
+
+reconcileStoredReportVisibility();
 
 function purgeExpiredReports(now = Date.now()) {
   const reports = getReports();
@@ -703,8 +718,7 @@ app.get("/api/provider-status", (_req, res) => {
 
 app.get("/api/reports/data", (req, res) => {
   return sendCachedJson(req, res, "reports", REPORTS_FILE, 10, () =>
-    getReports().filter((report) => req.query.includeRemoved === "true"
-      || (!report.isRemoved && String(report.moderationStatus || "pending").toLowerCase() !== "rejected")).flatMap((report) => {
+    getReports().filter(isReportPublic).flatMap((report) => {
       try { return [sanitizeReportForPublic(report)]; } catch { return []; }
     })
   );
@@ -778,6 +792,7 @@ app.patch("/api/moderation/reports/:id", requireModeratorOrAdmin, (req, res) => 
     changes.moderationStatus = value;
     changes.verified = value === "approved";
     changes.isRemoved = value === "rejected";
+    changes.publiclyVisible = value === "approved";
   }
   if (req.body.status !== undefined) {
     const value = String(req.body.status).toLowerCase();
@@ -1064,6 +1079,34 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
 app.get("/hazards/data", (req, res) => {
   return sendCachedJson(req, res, "hazards", HAZARDS_FILE, 20, () => {
     const allHazards = getNormalizedHazards();
+    const communityFeatures = getReports().filter(isReportPublic).flatMap((report) => {
+      try {
+        const normalized = normalizeReport(report);
+        return [normalizeHazard({
+          type: "Feature",
+          id: normalized.id,
+          geometry: normalized.geometry,
+          properties: {
+            hazard: normalized.type,
+            title: normalized.text || `${normalized.type} community report`,
+            description: normalized.text,
+            severity: normalized.severity,
+            confidence: normalized.moderationStatus === "approved" ? "confirmed" : "probable",
+            status: normalized.status,
+            source: "community",
+            sourceType: "community report",
+            communityReport: true,
+            reportId: normalized.id,
+            detectedAt: normalized.detectedAt,
+            createdAt: normalized.detectedAt,
+            lastUpdatedAt: normalized.updatedAt,
+          },
+        })];
+      } catch {
+        return [];
+      }
+    });
+    const combinedHazards = { ...allHazards, features: [...allHazards.features, ...communityFeatures] };
     const includeRecent = req.query.view === "recent";
     const requestedBbox = String(req.query.bbox || "").split(",").map(Number);
     const viewportBbox = requestedBbox.length === 4 && requestedBbox.every(Number.isFinite)
@@ -1076,8 +1119,8 @@ app.get("/hazards/data", (req, res) => {
     const heightKm = latitudeSpan * 111.32;
     const displayRadiusKm = Math.max(10, Math.min(1200, Math.hypot(widthKm, heightKm) / 6));
     const normalized = {
-      ...allHazards,
-      features: allHazards.features.filter((feature) =>
+      ...combinedHazards,
+      features: combinedHazards.features.filter((feature) =>
       (includeRecent || feature.properties.status === "active") && featureInHazardRegion(feature, viewportBbox)
       )
     };

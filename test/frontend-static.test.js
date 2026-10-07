@@ -38,3 +38,10 @@ test("moderation page retains every protected workflow connection", () => {
     assert.ok(html.includes(required), `moderation.html is missing ${required}`);
   }
 });
+
+test("public report map refreshes existing markers after moderation changes", () => {
+  const html = readPage("report.html");
+  assert.ok(html.includes("const reportSignature = report =>"));
+  assert.ok(html.includes("reportSignature(incoming) !== reportSignature(entry.data)"));
+  assert.ok(html.includes("incomingById"));
+});

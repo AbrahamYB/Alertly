@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyReportAiEvaluation, groupNearbyPointHazards, normalizeHazard, normalizeReport, sanitizeReportForPublic } from "../lib/domain.js";
+import { applyReportAiEvaluation, groupNearbyPointHazards, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
 
 test("legacy hazard is upgraded to the unified model", () => {
   const hazard = normalizeHazard({
@@ -55,6 +55,34 @@ test("NSFW AI verdict immediately quarantines a report but preserves it for staf
   assert.equal(quarantined.moderationStatus, "rejected");
   assert.equal(quarantined.aiEvaluation.verdict, "nsfw");
   assert.equal(quarantined.auditLog.at(-1).action, "ai-nsfw-quarantine");
+});
+
+test("public report visibility follows one moderation rule", () => {
+  const base = normalizeReport({ id: "visibility", type: "Flood", text: "Water on road", lat: 15, lng: -88 });
+  assert.equal(isReportPublic(base), false, "unverified pending reports stay in moderation");
+  const plausible = applyReportAiEvaluation(base, { verdict: "plausible", confidence: 88, reason: "Consistent evidence." });
+  assert.equal(isReportPublic(plausible), true);
+  assert.equal(plausible.moderationStatus, "approved", "AI-passed reports must not look pending to moderators");
+  assert.equal(plausible.verified, true);
+  assert.equal(isReportPublic(applyReportAiEvaluation(base, { verdict: "suspicious", confidence: 70, reason: "Conflicting evidence." })), false);
+  assert.equal(isReportPublic({ ...base, moderationStatus: "approved", verified: true }), true);
+  assert.equal(isReportPublic({ ...base, moderationStatus: "rejected", publiclyVisible: true }), false);
+  assert.equal(isReportPublic({ ...base, isRemoved: true, publiclyVisible: true }), false);
+});
+
+test("legacy report visibility is reconciled to the same public rule", () => {
+  const plausible = reconcileReportVisibility({ moderationStatus: "pending", aiEvaluation: { verdict: "plausible" } });
+  assert.equal(plausible.moderationStatus, "approved");
+  assert.equal(plausible.publiclyVisible, true);
+  assert.equal(plausible.verified, true);
+
+  const unverified = reconcileReportVisibility({ moderationStatus: "pending", aiEvaluation: { verdict: "unverified" } });
+  assert.equal(unverified.publiclyVisible, false);
+  assert.equal(unverified.verified, false);
+
+  const manuallyPending = reconcileReportVisibility({ moderationStatus: "pending", publiclyVisible: false, aiEvaluation: { verdict: "plausible" } });
+  assert.equal(manuallyPending.moderationStatus, "pending");
+  assert.equal(manuallyPending.publiclyVisible, false);
 });
 
 test("report without a location is rejected", () => {

@@ -25,7 +25,7 @@
 ## 2. CURRENT SYSTEM STATE
 
 - **Application Health**: Fully operational and hardened. All routes, feeds, community moderation, hazard admin, chatbox AI, vision verification, rate limiting, and removal resolution are active.
-- **Test Suite**: 47 automated checks passing through `npm test` (39 unit/static tests, 7 isolated API tests, and the staff/ownership HTTP smoke test).
+- **Test Suite**: 52 automated checks passing through `npm test` (44 unit/static tests, 7 isolated API tests, and the staff/ownership HTTP smoke test).
 - **Database & Persistence**:
   - Zero-dependency file persistence (`data/reports.json` and `hazards.geojson`) with atomic temporary writes (`.tmp` + `fs.renameSync`).
   - Automated database backup: `npm run backup` (creates timestamped snapshot in `backups/`).
@@ -114,7 +114,7 @@ stream/
 ### Community Reports & Moderation
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/reports/data` | Public reports (active & non-removed; purges expired first) |
+| GET | `/api/reports/data` | Public reports that passed AI plausibility or received moderator approval |
 | GET | `/api/moderation/reports` | All reports for moderation interface |
 | PATCH | `/api/moderation/reports/:id` | Update report (approve, reject, restore, edit, merge, note) |
 | DELETE | `/api/moderation/reports/:id` | Permanently delete report and attached files |
@@ -273,7 +273,7 @@ Run the full automated test suite. The runner starts isolated temporary servers 
 npm test
 ```
 
-### Test Coverage (47 Passing Checks)
+### Test Coverage (52 Passing Checks)
 - `test/ai.test.js`: Chatbot 413 history truncation, retry behavior, and search opt-out.
 - `test/ai-usage.test.js`: Privacy-safe aggregate usage tracking.
 - `test/domain.test.js`: GeoJSON normalization, report defaults, and Haversine point clustering.
@@ -289,7 +289,8 @@ npm test
 
 ## 10. RECENT CHANGE LOG
 
-0. **Headless Moderation Hardening**: Rejected reports are excluded from the public feed even with inconsistent legacy data; report/hazard writes invalidate server caches immediately; quarantined media remains available to authenticated AI re-checks; quarantine/restore moves use cross-platform safe replacement; invalid severities are rejected; legacy string attachments can be deleted; and an AI-withheld submission is no longer falsely shown as live in the submitter's browser.
+- **Latest — Unified Public/Moderation Visibility & Fixed Hazard Schedule**: Community reports now use one server-side visibility decision everywhere. AI-plausible or moderator-approved reports are public; unverified, suspicious, likely-false, rejected, and removed reports stay moderation-only. Approved community reports are merged into the main map hazard feed, already-open report maps replace stale markers after moderator edits, and public query parameters cannot reveal hidden reports. Automated hazard refreshes now run at fixed `00:00` and `12:00` times in `America/Guatemala` instead of drifting twelve hours from process startup.
+- **Latest — Headless Moderation Hardening**: Report/hazard writes invalidate server caches immediately; quarantined media remains available to authenticated AI re-checks; quarantine/restore moves use cross-platform safe replacement; invalid severities are rejected; legacy string attachments can be deleted; and an AI-withheld submission is no longer falsely shown as live in the submitter's browser.
 
 1. **Map Cleanup & Marker Polish**: Removed manual mapping and blue circle marker artifacts from `hazard-admin.html`. Segregated community reporting from official administrative inspection.
 2. **Codebase Hygiene**: Pruned dead `node-fetch` dependency (migrated to Node native `fetch`), deleted duplicate server files, and eliminated artificial emoji comments.
@@ -491,7 +492,7 @@ Inspired by `vladaad/discordcompressor` (Go + FFmpeg utility for target-size vid
    - Accepts **all major video formats** (`.mp4`, `.webm`, `.mov`, `.mkv`, `.avi`, `.flv`, `.wmv`, `.3gp`, `.ts`, `.ogv`, `.m4v`, `.mpg`).
    - Automatically transcodes any video format into standard **H.264/AAC MP4** with progressive streaming (`+faststart`), renames the final asset to `.mp4`, removes the raw upload, and updates database references so every browser, iPhone, Android, and PC can stream the video natively.
    - Moderation dashboard (`moderation.html`) updated with interactive video players and `▶ VIDEO` badges.
-   - Fully covered by `test/media-compressor.test.js`; the full project currently passes 43 automated checks.
+   - Fully covered by `test/media-compressor.test.js`; the full project currently passes 52 automated checks.
 
 12. **Canonical Repository & Cross-Platform Repair (2026-10-07)**:
    - Restored the complete Alertly source, installer foundation, tests, and deployment files to the private Git repository.

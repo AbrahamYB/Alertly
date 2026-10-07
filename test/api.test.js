@@ -87,6 +87,11 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(pubData.success, true);
   assert.ok(pubData.id);
   const reportId = pubData.id;
+  assert.equal(pubData.report.publiclyVisible, false);
+  assert.equal(pubData.report.moderationStatus, "pending");
+
+  const unverifiedPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
+  assert.equal(unverifiedPublic.some(report => report.id === reportId), false, "Unverified reports must remain moderation-only");
 
   // 2. Submit a removal request
   const remRes = await fetch(`${BASE_URL}/api/removal`, {
@@ -134,6 +139,8 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(rejectRes.status, 200);
   const rejectedPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
   assert.equal(rejectedPublic.some(report => report.id === reportId), false);
+  const rejectedBypassAttempt = await (await fetch(`${BASE_URL}/api/reports/data?includeRemoved=true`)).json();
+  assert.equal(rejectedBypassAttempt.some(report => report.id === reportId), false, "Public query parameters cannot expose rejected reports");
 
   const restoreRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}`, {
     method: "PATCH",
@@ -143,6 +150,8 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(restoreRes.status, 200);
   const restoredPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
   assert.equal(restoredPublic.some(report => report.id === reportId), true);
+  const mainMapHazards = await (await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&zoom=12`)).json();
+  assert.equal(mainMapHazards.features.some(feature => feature.properties?.reportId === reportId), true, "Approved community reports must appear on the main map feed");
 
   // 4. Resolve removal request (accept)
   const resolveRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}/removal-requests/${reqId}/resolve`, {

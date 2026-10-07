@@ -19,6 +19,7 @@ stream/
 │   ├── media-compressor.js ← 720p / 2MB video & image compressor (vladaad/discordcompressor architecture)
 │   ├── report-moderator-ai.js ← Groq vision + report credibility verification
 │   ├── domain.js           ← Data normalization + hazard clustering
+│   ├── fixed-schedule.js   ← Fixed local-time schedule calculation for hazard refreshes
 │   ├── hazard-region.js    ← Viewport bbox filter
 │   ├── provider-status.js  ← Automation provider health reader
 │   ├── security.js         ← Rate limiters, daily quota (15/day), sanitization, auth guards
@@ -48,6 +49,8 @@ stream/
 ├── test/
 │   ├── ai.test.js          ← AI retry + search opt-out tests
 │   ├── domain.test.js      ← Normalization + grouping tests
+│   ├── fixed-schedule.test.js ← Guatemala midnight/noon schedule tests
+│   ├── frontend-static.test.js ← No-window page syntax and moderation wiring checks
 │   ├── media-compressor.test.js ← 720p / 2MB video & image compression tests
 │   ├── report-moderator-ai.test.js ← Vision + report AI verification tests
 │   ├── security.test.js    ← Rate limiting, daily quota, bounds, and auth tests
@@ -82,7 +85,7 @@ stream/
 ### Community Reports & Moderation
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| GET | `/api/reports/data` | — | Public reports (active, non-removed; purges expired first) |
+| GET | `/api/reports/data` | — | Only AI-plausible or moderator-approved public reports |
 | GET | `/api/moderation/reports` | `requireModeratorOrAdmin` | All reports for moderation UI |
 | PATCH | `/api/moderation/reports/:id` | `requireModeratorOrAdmin` | Update report (reject, restore, edit, merge, note) |
 | DELETE | `/api/moderation/reports/:id` | `requireModeratorOrAdmin` | Permanently delete report + attachments |
@@ -171,6 +174,9 @@ stream/
 | `cleanType(value)` | Normalize hazard type string |
 | `normalizeHazard(feature, now)` | Validate + normalize hazard GeoJSON feature |
 | `normalizeReport(input, now)` | Validate + normalize community report |
+| `applyReportAiEvaluation(report, evaluation, now)` | Apply AI decision and canonical public/moderation state |
+| `isReportPublic(report)` | Single visibility decision shared by every public feed |
+| `reconcileReportVisibility(report)` | Upgrade legacy reports to the canonical visibility state |
 | `normalizeCollection(collection)` | Normalize a whole FeatureCollection |
 | `distanceKm(a, b)` | Haversine distance between two [lat,lng] points |
 | `groupNearbyPointHazards(collection, radiusKm)` | Cluster point hazards within radius for display |
@@ -186,6 +192,13 @@ stream/
 | Function | Description |
 |----------|-------------|
 | `readProviderStatus(file)` | Read automation provider health from file |
+
+### `lib/fixed-schedule.js`
+| Function | Description |
+|----------|-------------|
+| `parseDailyTimes(value)` | Validate fixed `HH:MM` daily schedule values |
+| `zonedMinute(date, timeZone)` | Resolve a timestamp to a minute in the configured time zone |
+| `nextScheduledTime(from, options)` | Find the next fixed wall-clock refresh without boot-time drift |
 
 ---
 

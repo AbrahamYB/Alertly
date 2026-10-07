@@ -2790,7 +2790,11 @@ let pendingReport = null, pendingMarker = null;
             id: result.id || reportData.id,
             images: result.images || reportData.images
           };
-          const isPublic = !savedReport.isRemoved && savedReport.moderationStatus !== "rejected";
+          const isPublic = !savedReport.isRemoved && (
+            savedReport.publiclyVisible === true ||
+            savedReport.moderationStatus === "approved" ||
+            savedReport.verified === true
+          );
           if (isPublic) addReportToMap(savedReport);
           reportInput.value = "";
           setSelectedFiles([]);
@@ -2963,17 +2967,29 @@ let pendingReport = null, pendingMarker = null;
         const resp = await fetch("/api/reports/data");
         const data = await resp.json();
         if (Array.isArray(data)) {
-          const incomingIds = new Set(data.map(r => String(r.id)));
-          // Remove layers for reports that are no longer active/present
+          const reportSignature = report => JSON.stringify({
+            updatedAt: report.updatedAt,
+            moderationStatus: report.moderationStatus,
+            status: report.status,
+            type: report.type,
+            text: report.text,
+            geometry: report.geometry,
+            images: (report.images || []).map(media => typeof media === "string" ? media : media.url),
+            aiVerdict: report.aiEvaluation?.verdict,
+          });
+          const incomingById = new Map(data.map(report => [String(report.id), report]));
+          // Remove reports that disappeared and stale markers whose public
+          // content changed after a moderator action.
           for (let i = reportStore.length - 1; i >= 0; i--) {
             const entry = reportStore[i];
             const id = String(entry.data?.id || "");
-            if (id && !incomingIds.has(id)) {
+            const incoming = incomingById.get(id);
+            if (id && (!incoming || reportSignature(incoming) !== reportSignature(entry.data))) {
               map.removeLayer(entry.marker);
               reportStore.splice(i, 1);
             }
           }
-          // Add new reports that are not yet on the map
+          // Add new or refreshed reports using the canonical server version.
           const existingIds = new Set(reportStore.map(e => String(e.data?.id || "")).filter(Boolean));
           let addedCount = 0;
           data.forEach(r => {

@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import * as cheerio from "cheerio";
 import fs from "fs";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
+import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -571,14 +572,23 @@ async function refreshAutomatedHazards() {
     console.log("[Automation] Cycle complete.");
   }
 }
-const REFRESH_INTERVAL_MS = Math.max(1, Number(process.env.HAZARD_REFRESH_HOURS || 12)) * 60 * 60 * 1000;
-const previousCheck = timestampOf(getHazards().lastHazardCheckCompletedAt);
-const initialDelay = Number.isFinite(previousCheck)
-  ? Math.max(0, REFRESH_INTERVAL_MS - (Date.now() - previousCheck))
-  : 0;
+const REFRESH_TIMES = parseDailyTimes(process.env.HAZARD_REFRESH_TIMES || "00:00,12:00");
+const REFRESH_TIMEZONE = process.env.HAZARD_REFRESH_TIMEZONE || "America/Guatemala";
 
-setTimeout(() => {
-  refreshAutomatedHazards();
-  setInterval(refreshAutomatedHazards, REFRESH_INTERVAL_MS);
-}, initialDelay);
-console.log(`[Automation] Next combined provider refresh in ${Math.ceil(initialDelay / 60000)} minute(s).`);
+function scheduleNextHazardRefresh(from = new Date()) {
+  const nextRun = nextScheduledTime(from, { times: REFRESH_TIMES, timeZone: REFRESH_TIMEZONE });
+  const delay = Math.max(0, nextRun.getTime() - Date.now());
+  saveHazardMetadata({
+    nextHazardCheckAt: nextRun.toISOString(),
+    hazardCheckSchedule: REFRESH_TIMES,
+    hazardCheckTimeZone: REFRESH_TIMEZONE,
+  });
+  console.log(`[Automation] Next combined provider refresh at ${nextRun.toISOString()} (${REFRESH_TIMES.join(" and ")} ${REFRESH_TIMEZONE}).`);
+  const timer = setTimeout(async () => {
+    await refreshAutomatedHazards();
+    scheduleNextHazardRefresh(new Date(Date.now() + 60_000));
+  }, delay);
+  timer.unref?.();
+}
+
+scheduleNextHazardRefresh();
