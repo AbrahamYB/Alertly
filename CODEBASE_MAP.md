@@ -107,7 +107,7 @@ stream/
 ### Hazards (Admin)
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| GET | `/hazards/data` | — | Public hazard GeoJSON (viewport-scoped, grouped) |
+| GET | `/hazards/data` | — | Compact, cacheable public hazard GeoJSON scoped by viewport and enabled types |
 | GET | `/api/admin/hazards` | `requireAdmin` | Full admin hazard list |
 | POST | `/hazards/publish` | `requireAdmin` | Create new hazard |
 | PATCH | `/api/admin/hazards/:id` | `requireAdmin` | Edit hazard |
@@ -125,7 +125,7 @@ stream/
 | `getReports()` | Read `data/reports.json` |
 | `saveReports(reports)` | Atomic write to `data/reports.json` via `.tmp` rename |
 | `purgeExpiredReports(now)` | Remove reports and orphan uploads older than 30 days |
-| `purgeExpiredAutomatedHazards(now)` | Remove automated hazards older than 30 days |
+| `purgeExpiredAutomatedHazards(now)` | Remove automated hazards after 15 days without renewed provider evidence |
 | `requireAdmin(req, res, next)` | Guard requiring a valid invite-only staff session |
 | `requireModeratorOrAdmin(req, res, next)` | Guard requiring a valid owner or staff session |
 | `getOrCreateSession(req, res)` | Get or create chat session (72h inactivity TTL) |

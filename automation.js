@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const HAZARDS_FILE = process.env.HAZARDS_FILE
   ? path.resolve(process.env.HAZARDS_FILE)
   : path.join(__dirname, "hazards.geojson");
-const HAZARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const HAZARD_RETENTION_MS = 15 * 24 * 60 * 60 * 1000;
 
 // Full-world monitoring bounds. Override with HAZARD_BBOX=minLng,minLat,maxLng,maxLat.
 const BBOX = getHazardBbox();
@@ -55,13 +55,9 @@ function isRecentProviderFeature(feature, now = Date.now()) {
   if (!feature?.properties?.automated) return true;
   const properties = feature.properties;
   const timestamp = timestampOf(
-    properties.lastUpdatedAt || properties.detectedAt || properties.eventDate || properties.createdAt
+    properties.lastSeenAt || properties.lastUpdatedAt || properties.detectedAt || properties.eventDate || properties.createdAt
   );
   return !Number.isFinite(timestamp) || now - timestamp < HAZARD_RETENTION_MS;
-}
-
-function recentProviderFeatures(features) {
-  return features.filter((feature) => isRecentProviderFeature(feature));
 }
 
 function getHazards() {
@@ -419,7 +415,7 @@ async function fetchCopernicusEMS() {
            });
         }
      }
-     return recentProviderFeatures(features);
+     return features;
   } catch (e) {
     console.error("[Automation] Copernicus Surge failed:", e.message);
     return null;
@@ -444,12 +440,10 @@ async function refreshAutomatedHazards() {
     console.log("[Automation] Starting background hazard refresh...");
 
     const hazards = getHazards();
-    const successfulSources = new Set();
-    const seenExtIds = new Set();
     let addedCount = 0;
     let updatedCount = 0;
 
-    const mergeProviderFeatures = (providerId, sourceId, features) => {
+    const mergeProviderFeatures = (providerId, features) => {
       const checkedAt = new Date().toISOString();
       if (!Array.isArray(features)) {
         cycleFailed = true;
@@ -461,7 +455,6 @@ async function refreshAutomatedHazards() {
         };
         return;
       }
-      successfulSources.add(sourceId);
       providerStatus[providerId] = {
         status: "healthy",
         lastAttemptAt: checkedAt,
@@ -469,11 +462,16 @@ async function refreshAutomatedHazards() {
         itemCount: features.length,
         message: `${features.length} current item${features.length === 1 ? "" : "s"} received.`,
       };
-      for (const feature of recentProviderFeatures(features)) {
+      for (const feature of features) {
         const extId = feature.properties?.extId;
         if (!extId) continue;
-        seenExtIds.add(extId);
         const index = hazards.features.findIndex(hazard => hazard.properties?.extId === extId);
+        const existing = index > -1 ? hazards.features[index] : null;
+        feature.properties.firstSeenAt = existing?.properties?.firstSeenAt
+          || existing?.properties?.detectedAt
+          || feature.properties.detectedAt
+          || checkedAt;
+        feature.properties.lastSeenAt = checkedAt;
         if (index > -1) {
           hazards.features[index] = feature;
           updatedCount += 1;
@@ -485,11 +483,11 @@ async function refreshAutomatedHazards() {
     };
 
     console.log("[Automation] Fetching satellite earthquake data...");
-    mergeProviderFeatures("usgs", "usgs", await fetchUSGSEarthquakes());
+    mergeProviderFeatures("usgs", await fetchUSGSEarthquakes());
 
     console.log("[Automation] Fetching satellite thermal data...");
     if (process.env.FIRMS_MAP_KEY) {
-      mergeProviderFeatures("nasa_firms", "nasa", await fetchNASAFires());
+      mergeProviderFeatures("nasa_firms", await fetchNASAFires());
     } else {
       providerStatus.nasa_firms = {
         status: "disabled",
@@ -499,19 +497,18 @@ async function refreshAutomatedHazards() {
     }
 
     console.log("[Automation] Fetching NASA Observatory events (EONET)...");
-    mergeProviderFeatures("nasa_eonet", "nasa_eonet", await fetchNASAEonet());
+    mergeProviderFeatures("nasa_eonet", await fetchNASAEonet());
 
     console.log("[Automation] Fetching RSOE EDIS events...");
-    mergeProviderFeatures("rsoe_edis", "rsoe_edis", await fetchRSOEEDIS());
+    mergeProviderFeatures("rsoe_edis", await fetchRSOEEDIS());
 
     console.log("[Automation] Fetching Copernicus EMS activations...");
-    mergeProviderFeatures("copernicus", "copernicus", await fetchCopernicusEMS());
+    mergeProviderFeatures("copernicus", await fetchCopernicusEMS());
 
     try {
       const gdacsUrl = "https://www.gdacs.org/xml/rss.xml";
       const resp = await fetchOfficial(gdacsUrl, { headers: { Accept: "application/xml, text/xml" } });
       {
-        successfulSources.add("gdacs");
         providerStatus.gdacs = {
           status: "healthy",
           lastAttemptAt: new Date().toISOString(),
@@ -538,12 +535,8 @@ async function refreshAutomatedHazards() {
           const severity = $xml(el).find("gdacs\\:severity").text() || "medium";
           const fromDate = $xml(el).find("gdacs\\:fromdate").text() || "";
           const eventid = $xml(el).find("gdacs\\:eventid").text() || "";
-          const eventTimestamp = timestampOf(fromDate);
-
-          if (Number.isFinite(eventTimestamp) && Date.now() - eventTimestamp >= HAZARD_RETENTION_MS) continue;
           if (title && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
             const extId = `gdacs_${gdacsType}_${eventid}`;
-            seenExtIds.add(extId);
             const categoryMap = { "eq": "earthquake", "tc": "storm", "fl": "flood", "wf": "fire", "vo": "volcano", "ls": "landslide", "dr": "drought", "hw": "heatwave" };
             const hazardType = categoryMap[gdacsType] || "other";
             const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
@@ -567,6 +560,7 @@ async function refreshAutomatedHazards() {
             const summary = [`${impactLabel} GDACS alert.`, eventDate ? `Event date: ${eventDate}.` : "", impacts.length ? `Reported impact: ${impacts.join("; ")}.` : cleanDesc]
               .filter(Boolean).join(" ");
 
+            const checkedAt = new Date().toISOString();
             const feature = {
               type: "Feature",
               properties: {
@@ -584,11 +578,15 @@ async function refreshAutomatedHazards() {
                 eventDate: fromDate,
                 detectedAt: fromDate || new Date().toISOString(),
                 lastUpdatedAt: fromDate || new Date().toISOString(),
-                createdAt: fromDate || new Date().toISOString()
+                createdAt: fromDate || checkedAt,
+                lastSeenAt: checkedAt
               },
               geometry: geometry
             };
             const existingIdx = hazards.features.findIndex(h => h.properties.extId === extId);
+            feature.properties.firstSeenAt = existingIdx > -1
+              ? hazards.features[existingIdx].properties.firstSeenAt || hazards.features[existingIdx].properties.detectedAt
+              : feature.properties.detectedAt;
             if (existingIdx > -1) { hazards.features[existingIdx] = feature; updatedCount++; }
             else { hazards.features.push(feature); addedCount++; }
           }
@@ -607,15 +605,6 @@ async function refreshAutomatedHazards() {
     }
 
     const initialCount = hazards.features.length;
-    hazards.features = hazards.features.filter(f => {
-      if (!f?.properties?.extId) return true;
-      const source = f.properties.source;
-      const normalizedSource = source === "nasa" ? (String(f.properties.notes || "").includes("Observatory") ? "nasa_eonet" : "nasa") : source;
-      if (successfulSources.has(normalizedSource)) {
-         return seenExtIds.has(f.properties.extId);
-      }
-      return true; 
-    });
     hazards.features = hazards.features.filter((feature) => isRecentProviderFeature(feature));
     const removedCount = initialCount - hazards.features.length;
 

@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import fs from "fs";
 import multer from "multer";
-import { applyReportAiEvaluation, groupNearbyPointHazards, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isHazardCurrent, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
 import { readProviderStatus } from "./lib/provider-status.js";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { evaluateReportWithAI } from "./lib/report-moderator-ai.js";
@@ -109,7 +109,7 @@ const AUDIT_FILE = path.join(DATA_DIR, "audit.jsonl");
 const AI_USAGE_FILE = path.join(DATA_DIR, "ai-usage.json");
 const ALERTLY_PUBLIC_URL = String(process.env.ALERTLY_PUBLIC_URL || "https://alertly.live").replace(/\/+$/, "");
 const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const AUTOMATED_HAZARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const AUTOMATED_HAZARD_RETENTION_MS = HAZARD_PUBLIC_LIFETIME_MS;
 const HAZARD_BBOX = getHazardBbox();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -166,9 +166,10 @@ let reportsFileCache = { mtimeMs: -1, data: null };
 let normalizedHazardsCache = { mtimeMs: -1, data: null };
 const publicResponseCache = new Map();
 
-function sendCachedJson(req, res, namespace, sourceFile, maxAgeSeconds, createPayload) {
-  const mtimeMs = fs.statSync(sourceFile).mtimeMs;
-  const cacheKey = `${namespace}:${mtimeMs}:${req.originalUrl}`;
+function sendCachedJson(req, res, namespace, sourceFile, maxAgeSeconds, createPayload, sharedMaxAgeSeconds = maxAgeSeconds) {
+  const sourceFiles = Array.isArray(sourceFile) ? sourceFile : [sourceFile];
+  const sourceVersion = sourceFiles.map((file) => fs.statSync(file).mtimeMs).join(":");
+  const cacheKey = `${namespace}:${sourceVersion}:${req.originalUrl}`;
   let cached = publicResponseCache.get(cacheKey);
   if (!cached) {
     const body = JSON.stringify(createPayload());
@@ -177,7 +178,7 @@ function sendCachedJson(req, res, namespace, sourceFile, maxAgeSeconds, createPa
     if (publicResponseCache.size >= 200) publicResponseCache.clear();
     publicResponseCache.set(cacheKey, cached);
   }
-  res.setHeader("Cache-Control", `public, max-age=${maxAgeSeconds}, stale-while-revalidate=${maxAgeSeconds * 2}`);
+  res.setHeader("Cache-Control", `public, max-age=${maxAgeSeconds}, s-maxage=${sharedMaxAgeSeconds}, stale-while-revalidate=${Math.max(maxAgeSeconds * 2, sharedMaxAgeSeconds)}`);
   res.setHeader("ETag", cached.etag);
   if (req.headers["if-none-match"] === cached.etag) return res.status(304).end();
   return res.type("application/json").send(cached.body);
@@ -315,7 +316,7 @@ function purgeExpiredAutomatedHazards(now = Date.now()) {
       const source = String(properties.source || "").toLowerCase();
       const isAutomatic = properties.automated === true
         || !["admin", "manual", "community"].includes(source);
-      const lastProviderUpdate = new Date(properties.lastUpdatedAt || properties.detectedAt).getTime();
+      const lastProviderUpdate = new Date(properties.lastSeenAt || properties.lastUpdatedAt || properties.detectedAt).getTime();
       if (isAutomatic && Number.isFinite(lastProviderUpdate) && now - lastProviderUpdate >= AUTOMATED_HAZARD_RETENTION_MS) {
         expired.push(feature);
       } else {
@@ -327,7 +328,7 @@ function purgeExpiredAutomatedHazards(now = Date.now()) {
   }
   if (expired.length) {
     saveHazards({ ...collection, features: retained });
-    console.log(`[HAZARDS] Removed ${expired.length} automatically added hazards older than 30 days.`);
+    console.log(`[HAZARDS] Removed ${expired.length} automatically added hazards without renewed evidence for 15 days.`);
   }
   return { removedHazards: expired.length };
 }
@@ -1120,12 +1121,13 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
 });
 
 app.get("/hazards/data", (req, res) => {
-  return sendCachedJson(req, res, "hazards", HAZARDS_FILE, 20, () => {
+  return sendCachedJson(req, res, "hazards", [HAZARDS_FILE, REPORTS_FILE], 300, () => {
     const allHazards = getNormalizedHazards();
+    const now = Date.now();
     const communityFeatures = getReports().filter(isReportPublic).flatMap((report) => {
       try {
         const normalized = normalizeReport(report);
-        return [normalizeHazard({
+        const feature = normalizeHazard({
           type: "Feature",
           id: normalized.id,
           geometry: normalized.geometry,
@@ -1144,13 +1146,18 @@ app.get("/hazards/data", (req, res) => {
             createdAt: normalized.detectedAt,
             lastUpdatedAt: normalized.updatedAt,
           },
-        })];
+        });
+        return isHazardCurrent(feature, now) ? [feature] : [];
       } catch {
         return [];
       }
     });
     const combinedHazards = { ...allHazards, features: [...allHazards.features, ...communityFeatures] };
     const includeRecent = req.query.view === "recent";
+    const requestedTypes = new Set(String(req.query.types || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean));
     const requestedBbox = String(req.query.bbox || "").split(",").map(Number);
     const viewportBbox = requestedBbox.length === 4 && requestedBbox.every(Number.isFinite)
       ? requestedBbox
@@ -1164,7 +1171,10 @@ app.get("/hazards/data", (req, res) => {
     const normalized = {
       ...combinedHazards,
       features: combinedHazards.features.filter((feature) =>
-      (includeRecent || feature.properties.status === "active") && featureInHazardRegion(feature, viewportBbox)
+        isHazardCurrent(feature, now)
+        && (includeRecent || feature.properties.status === "active")
+        && (!requestedTypes.size || requestedTypes.has(feature.properties.hazard))
+        && featureInHazardRegion(feature, viewportBbox)
       )
     };
     const displayed = groupNearbyPointHazards(normalized, displayRadiusKm);
@@ -1178,8 +1188,8 @@ app.get("/hazards/data", (req, res) => {
         feature.properties.displayCluster = true;
       }
     }
-    return displayed;
-  });
+    return { type: "FeatureCollection", features: displayed.features.map(compactHazardForPublic) };
+  }, 300);
 });
 
 app.get("/api/admin/hazards", requireAdmin, (_req, res) => {

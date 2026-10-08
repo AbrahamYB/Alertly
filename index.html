@@ -1190,16 +1190,29 @@ scroll-behavior: auto !important;
     let hazardLoadController = null;
     let hazardLoadTimer = null;
 
+    function sharedHazardViewport(bounds, zoom) {
+      const step = zoom >= 8 ? 0.25 : zoom >= 6 ? 0.5 : 1;
+      return [
+        Math.floor(bounds.getWest() / step) * step,
+        Math.floor(bounds.getSouth() / step) * step,
+        Math.ceil(bounds.getEast() / step) * step,
+        Math.ceil(bounds.getNorth() / step) * step
+      ].map(value => value.toFixed(2)).join(",");
+    }
+
     async function loadHazardsFromServer() {
       let data = null;
       try {
-        if (!Object.values(toggles).some(toggle => toggle?.checked)) return;
+        const enabledTypes = Object.entries(toggles)
+          .filter(([, toggle]) => toggle?.checked)
+          .map(([key]) => key)
+          .sort();
+        if (!enabledTypes.length) return;
         if (hazardLoadController) hazardLoadController.abort();
         hazardLoadController = new AbortController();
         const bounds = map.getBounds();
-        const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
-          .map(value => value.toFixed(5)).join(",");
-        const res = await fetch(`/hazards/data?bbox=${encodeURIComponent(bbox)}&zoom=${map.getZoom()}`, {
+        const bbox = sharedHazardViewport(bounds, map.getZoom());
+        const res = await fetch(`/hazards/data?bbox=${encodeURIComponent(bbox)}&types=${encodeURIComponent(enabledTypes.join(","))}`, {
           signal: hazardLoadController.signal
         });
         data = await res.json();
@@ -1242,7 +1255,7 @@ scroll-behavior: auto !important;
 
             if (layer) {
               const safe = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
-              const evidenceSources = [...new Set((feature.properties.supportingEvidence || []).map(item => item.source).filter(Boolean))];
+              const evidenceSources = feature.properties.evidenceSources || [];
               const popupHtml = `
                 <div class="hazard-popup">
                   <div class="hazard-popup__title">${safe(title)}</div>
@@ -1714,7 +1727,7 @@ function styleFor(hazard, severity) {
       periodicHazardTimer = setTimeout(async () => {
         if (!document.hidden) await loadHazardsFromServer();
         schedulePeriodicHazardRefresh();
-      }, document.hidden ? 180000 : 60000);
+      }, document.hidden ? 900000 : 300000 + Math.floor(Math.random() * 30000));
     }
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) loadHazardsFromServer();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyReportAiEvaluation, groupNearbyPointHazards, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isHazardCurrent, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
 
 test("legacy hazard is upgraded to the unified model", () => {
   const hazard = normalizeHazard({
@@ -33,6 +33,46 @@ test("nearby point hazards of the same type are grouped automatically", () => {
   const group = result.features.find((feature) => feature.properties.grouped);
   assert.equal(group.properties.groupedEventCount, 2);
   assert.deepEqual(group.properties.supportingEvidence.map((item) => item.hazardId).sort(), ["a", "b"]);
+});
+
+test("hazards leave the public map after 15 days without renewed evidence", () => {
+  const now = new Date("2026-02-01T00:00:00Z").getTime();
+  const active = normalizeHazard({
+    type: "Feature",
+    properties: { hazard: "flood", lastSeenAt: new Date(now - HAZARD_PUBLIC_LIFETIME_MS + 1000).toISOString() },
+    geometry: { type: "Point", coordinates: [-87, 15] },
+  });
+  const expired = normalizeHazard({
+    type: "Feature",
+    properties: { hazard: "flood", lastSeenAt: new Date(now - HAZARD_PUBLIC_LIFETIME_MS).toISOString() },
+    geometry: { type: "Point", coordinates: [-87, 15] },
+  });
+  assert.equal(isHazardCurrent(active, now), true);
+  assert.equal(isHazardCurrent(expired, now), false);
+});
+
+test("public hazards omit internal evidence detail", () => {
+  const compact = compactHazardForPublic(normalizeHazard({
+    type: "Feature",
+    id: "grouped",
+    properties: {
+      hazard: "fire",
+      notes: "Visible summary",
+      extId: "private-provider-id",
+      supportingEvidence: [
+        { source: "nasa", sourceUrl: "https://example.test/a", coordinates: [-87, 15] },
+        { source: "nasa" },
+        { source: "gdacs" },
+      ],
+      grouped: true,
+      groupedEventCount: 3,
+    },
+    geometry: { type: "Point", coordinates: [-87, 15] },
+  }));
+  assert.equal(compact.properties.description, "Visible summary");
+  assert.deepEqual(compact.properties.evidenceSources, ["nasa", "gdacs"]);
+  assert.equal(compact.properties.extId, undefined);
+  assert.equal(compact.properties.supportingEvidence, undefined);
 });
 
 test("legacy coordinate report becomes point geometry", () => {

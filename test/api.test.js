@@ -188,8 +188,12 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(restoreRes.status, 200);
   const restoredPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
   assert.equal(restoredPublic.some(report => report.id === reportId), true);
-  const mainMapHazards = await (await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&zoom=12`)).json();
+  const mainMapResponse = await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
+  assert.match(mainMapResponse.headers.get("cache-control") || "", /max-age=300/);
+  assert.match(mainMapResponse.headers.get("cache-control") || "", /s-maxage=300/);
+  const mainMapHazards = await mainMapResponse.json();
   assert.equal(mainMapHazards.features.some(feature => feature.properties?.reportId === reportId), true, "Approved community reports must appear on the main map feed");
+  assert.equal(mainMapHazards.features.some(feature => feature.properties?.supportingEvidence), false, "Public map data must omit detailed internal evidence");
 
   // 4. Resolve removal request (accept)
   const resolveRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}/removal-requests/${reqId}/resolve`, {
