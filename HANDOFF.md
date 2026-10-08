@@ -126,7 +126,7 @@ stream/
 ### AI Assistant Chat
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/chat` | JSON response by default for the public UI; legacy SSE mode remains supported; 15-turn/6h session |
+| POST | `/chat` | JSON response by default for the public UI; legacy SSE mode remains supported; scoped environmental/Alertly assistant; 15-turn context with 72h inactivity retention |
 | POST | `/session/reset` | Clear active chat session |
 
 ### Hazard Administration (Localhost Only)
@@ -301,6 +301,7 @@ npm test
 - **Latest — Source Style Cleanup**: Removed decorative and generated-looking comments, emoji debug output, stale test model names, and unused declarations while preserving user-facing hazard icons and labels. Normalized the automation supervisor's formatting and stopped sending placeholder image data when an attachment cannot be read.
 - **Latest — Unified Public/Moderation Visibility & Fixed Hazard Schedule**: Community reports now use one server-side visibility decision everywhere. AI-plausible or moderator-approved reports are public; unverified, suspicious, likely-false, rejected, and removed reports stay moderation-only. Approved community reports are merged into the main map hazard feed, already-open report maps replace stale markers after moderator edits, and public query parameters cannot reveal hidden reports. Automated hazard refreshes now run at fixed `00:00` and `12:00` times in `America/Guatemala` instead of drifting twelve hours from process startup.
 - **Latest — Full Reliability Audit**: Connected RSOE EDIS and Copernicus to the real refresh cycle; made provider failure/empty-result handling safe; aligned provider staleness with the twice-daily schedule; corrected upload cleanup and the 50MB error; made backup/restore/seed deployment-path aware and atomic; removed dead aliases, IPC, and legacy seed fields; added clean worker shutdown/restart behavior; restored quarantined media after a plausible staff re-check; narrowed proxy trust; and expanded coverage to 61 passing checks.
+- **Latest — Chat Retention and Scope Guard**: Extended browser-visible chat and context retention to 72 hours of inactivity, added a persistent 72-hour chat cookie, and safely resends the last 15 turns from the same browser so context survives a server restart. Added a no-AI-call gate for clearly unrelated requests plus a strict environmental and Alertly scope prompt. The 15-prompt daily quota remains independent and off-topic rejections do not consume it.
 
 1. **Map Cleanup & Marker Polish**: Removed manual mapping and blue circle marker artifacts from `hazard-admin.html`. Segregated community reporting from official administrative inspection.
 2. **Codebase Hygiene**: Pruned dead `node-fetch` dependency (migrated to Node native `fetch`), deleted duplicate server files, and eliminated artificial emoji comments.

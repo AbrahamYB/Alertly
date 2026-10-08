@@ -1363,6 +1363,7 @@ function styleFor(hazard, severity) {
       const input = document.getElementById("chat-input");
       const text = input.value.trim();
       if (!text) return;
+      const priorContext = chatContextForRequest();
 
       toggleChat(true);
 
@@ -1474,7 +1475,7 @@ function styleFor(hazard, severity) {
             "Content-Type": "application/json",
             "Accept": "application/json"
           },
-          body: JSON.stringify({ message: text, responseMode: "json" })
+          body: JSON.stringify({ message: text, history: priorContext, responseMode: "json" })
         });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
@@ -1535,7 +1536,18 @@ function styleFor(hazard, severity) {
     });
 
     const CHAT_LS_KEY = "alertly_chat_v1";
-    const CHAT_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+    const CHAT_TTL_MS = 72 * 60 * 60 * 1000;
+
+    function chatContextForRequest() {
+      return Array.from(chatBody.querySelectorAll(".message"))
+        .map(el => {
+          const role = el.classList.contains("user") ? "user" : "assistant";
+          const content = el.textContent.trim();
+          return { role, content };
+        })
+        .filter(item => item.content && !/^(?:Thinking…|⚠️ Connection Error:)/.test(item.content))
+        .slice(-30);
+    }
 
     function serializeChat() {
       const msgs = chatBody.querySelectorAll(".message");
@@ -1581,10 +1593,12 @@ function styleFor(hazard, severity) {
       } catch (_) {}
     }
 
+    // Restore before observing so merely reopening the page does not extend
+    // the 72-hour expiration timestamp.
+    loadPersistedChat();
+
     const _chatObserver = new MutationObserver(() => persistChat());
     _chatObserver.observe(chatBody, { childList: true, subtree: true, characterData: true });
-
-    loadPersistedChat();
 
     window.addEventListener("beforeunload", () => {
       if (!chatBody.querySelector(".message")) localStorage.removeItem(CHAT_LS_KEY);

@@ -99,7 +99,7 @@ stream/
 ### AI Chat
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| POST | `/chat` | `chatLimiterUnlessStaff` | JSON by default, legacy SSE support, 15 prompts/day public quota, staff bypass, 15-turn context |
+| POST | `/chat` | `chatLimiterUnlessStaff` | JSON by default, legacy SSE support, low-cost topic guard, 15 prompts/day public quota, staff bypass, 15-turn context |
 | GET | `/api/chat/quota` | — | Check the public daily quota or signed-in staff unlimited status |
 | GET | `/api/staff/ai-usage` | `requireStaff` | Privacy-safe daily AI request/token aggregates and latest provider limit headers |
 | POST | `/session/reset` | — | Clear chat session cookie |
@@ -128,7 +128,7 @@ stream/
 | `purgeExpiredAutomatedHazards(now)` | Remove automated hazards older than 30 days |
 | `requireAdmin(req, res, next)` | Guard requiring a valid invite-only staff session |
 | `requireModeratorOrAdmin(req, res, next)` | Guard requiring a valid owner or staff session |
-| `getOrCreateSession(req, res)` | Get or create chat session (6h TTL) |
+| `getOrCreateSession(req, res)` | Get or create chat session (72h inactivity TTL) |
 | `resetSession(sid)` | Delete a session by ID |
 | `send(value)` | Write a legacy SSE data frame when JSON mode is not requested |
 
@@ -246,7 +246,8 @@ Sidebar
 AI Chat Panel
   ├── Toggle (▾) + Save to device (↓) buttons — both icon-btn style
   ├── Input + Send button (SSE streaming, char-by-char typing animation)
-  ├── localStorage autosave (key: alertly_chat_v1, 6h TTL, MutationObserver)
+  ├── localStorage autosave (key: alertly_chat_v1, 72h inactivity TTL, MutationObserver)
+  ├── Sends validated plain-text context so the last 15 turns survive server restarts
   └── Download exports plain-text .txt via Blob URL
 ```
 
