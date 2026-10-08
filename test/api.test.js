@@ -188,12 +188,17 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(restoreRes.status, 200);
   const restoredPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
   assert.equal(restoredPublic.some(report => report.id === reportId), true);
-  const mainMapResponse = await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
-  assert.match(mainMapResponse.headers.get("cache-control") || "", /max-age=300/);
-  assert.match(mainMapResponse.headers.get("cache-control") || "", /s-maxage=300/);
-  const mainMapHazards = await mainMapResponse.json();
-  assert.equal(mainMapHazards.features.some(feature => feature.properties?.reportId === reportId), true, "Approved community reports must appear on the main map feed");
-  assert.equal(mainMapHazards.features.some(feature => feature.properties?.supportingEvidence), false, "Public map data must omit detailed internal evidence");
+  const officialMapResponse = await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
+  assert.match(officialMapResponse.headers.get("cache-control") || "", /max-age=300/);
+  assert.match(officialMapResponse.headers.get("cache-control") || "", /s-maxage=300/);
+  const officialMapHazards = await officialMapResponse.json();
+  assert.equal(officialMapHazards.features.some(feature => feature.properties?.reportId === reportId), false, "The heavily cached official feed must not contain community reports");
+
+  const communityMapResponse = await fetch(`${BASE_URL}/api/reports/data?view=map&bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
+  assert.match(communityMapResponse.headers.get("cache-control") || "", /no-store/);
+  const communityMapHazards = await communityMapResponse.json();
+  assert.equal(communityMapHazards.features.some(feature => feature.properties?.reportId === reportId), true, "Approved community reports must appear on the main map feed");
+  assert.equal(communityMapHazards.features.some(feature => feature.properties?.supportingEvidence), false, "Public map data must omit detailed internal evidence");
 
   // 4. Resolve removal request (accept)
   const resolveRes = await fetch(`${BASE_URL}/api/moderation/reports/${reportId}/removal-requests/${reqId}/resolve`, {

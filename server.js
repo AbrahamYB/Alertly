@@ -697,6 +697,51 @@ app.get("/api/provider-status", (_req, res) => {
 });
 
 app.get("/api/reports/data", (req, res) => {
+  if (req.query.view === "map") {
+    const now = Date.now();
+    const requestedTypes = new Set(String(req.query.types || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean));
+    const requestedBbox = String(req.query.bbox || "").split(",").map(Number);
+    const viewportBbox = requestedBbox.length === 4 && requestedBbox.every(Number.isFinite)
+      ? requestedBbox
+      : HAZARD_BBOX;
+    const features = getReports().filter(isReportPublic).flatMap((report) => {
+      try {
+        const normalized = normalizeReport(report);
+        const feature = normalizeHazard({
+          type: "Feature",
+          id: normalized.id,
+          geometry: normalized.geometry,
+          properties: {
+            hazard: normalized.type,
+            title: normalized.text || `${normalized.type} community report`,
+            description: normalized.text,
+            severity: normalized.severity,
+            confidence: normalized.moderationStatus === "approved" ? "confirmed" : "probable",
+            status: normalized.status,
+            source: "community",
+            sourceType: "community report",
+            communityReport: true,
+            reportId: normalized.id,
+            detectedAt: normalized.detectedAt,
+            createdAt: normalized.detectedAt,
+            lastUpdatedAt: normalized.updatedAt,
+          },
+        });
+        return isHazardCurrent(feature, now)
+          && (!requestedTypes.size || requestedTypes.has(feature.properties.hazard))
+          && featureInHazardRegion(feature, viewportBbox)
+          ? [compactHazardForPublic(feature)]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ type: "FeatureCollection", features });
+  }
   return sendCachedJson(req, res, "reports", REPORTS_FILE, 10, () =>
     getReports().filter(isReportPublic).flatMap((report) => {
       try { return [sanitizeReportForPublic(report)]; } catch { return []; }
@@ -1121,38 +1166,9 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
 });
 
 app.get("/hazards/data", (req, res) => {
-  return sendCachedJson(req, res, "hazards", [HAZARDS_FILE, REPORTS_FILE], 300, () => {
+  return sendCachedJson(req, res, "hazards", HAZARDS_FILE, 300, () => {
     const allHazards = getNormalizedHazards();
     const now = Date.now();
-    const communityFeatures = getReports().filter(isReportPublic).flatMap((report) => {
-      try {
-        const normalized = normalizeReport(report);
-        const feature = normalizeHazard({
-          type: "Feature",
-          id: normalized.id,
-          geometry: normalized.geometry,
-          properties: {
-            hazard: normalized.type,
-            title: normalized.text || `${normalized.type} community report`,
-            description: normalized.text,
-            severity: normalized.severity,
-            confidence: normalized.moderationStatus === "approved" ? "confirmed" : "probable",
-            status: normalized.status,
-            source: "community",
-            sourceType: "community report",
-            communityReport: true,
-            reportId: normalized.id,
-            detectedAt: normalized.detectedAt,
-            createdAt: normalized.detectedAt,
-            lastUpdatedAt: normalized.updatedAt,
-          },
-        });
-        return isHazardCurrent(feature, now) ? [feature] : [];
-      } catch {
-        return [];
-      }
-    });
-    const combinedHazards = { ...allHazards, features: [...allHazards.features, ...communityFeatures] };
     const includeRecent = req.query.view === "recent";
     const requestedTypes = new Set(String(req.query.types || "")
       .split(",")
@@ -1169,8 +1185,8 @@ app.get("/hazards/data", (req, res) => {
     const heightKm = latitudeSpan * 111.32;
     const displayRadiusKm = Math.max(10, Math.min(1200, Math.hypot(widthKm, heightKm) / 6));
     const normalized = {
-      ...combinedHazards,
-      features: combinedHazards.features.filter((feature) =>
+      ...allHazards,
+      features: allHazards.features.filter((feature) =>
         isHazardCurrent(feature, now)
         && (includeRecent || feature.properties.status === "active")
         && (!requestedTypes.size || requestedTypes.has(feature.properties.hazard))

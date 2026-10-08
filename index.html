@@ -1212,10 +1212,16 @@ scroll-behavior: auto !important;
         hazardLoadController = new AbortController();
         const bounds = map.getBounds();
         const bbox = sharedHazardViewport(bounds, map.getZoom());
-        const res = await fetch(`/hazards/data?bbox=${encodeURIComponent(bbox)}&types=${encodeURIComponent(enabledTypes.join(","))}`, {
-          signal: hazardLoadController.signal
-        });
-        data = await res.json();
+        const query = `bbox=${encodeURIComponent(bbox)}&types=${encodeURIComponent(enabledTypes.join(","))}`;
+        const [hazardResponse, communityResponse] = await Promise.all([
+          fetch(`/hazards/data?${query}`, { signal: hazardLoadController.signal }),
+          fetch(`/api/reports/data?view=map&${query}`, { signal: hazardLoadController.signal, cache: "no-store" })
+        ]);
+        const [hazardData, communityData] = await Promise.all([hazardResponse.json(), communityResponse.json()]);
+        data = {
+          type: "FeatureCollection",
+          features: [...(hazardData.features || []), ...(communityData.features || [])]
+        };
         Object.values(hazardGroups).forEach(group => group.clearLayers());
 
         if (data && data.features) {
@@ -1727,7 +1733,7 @@ function styleFor(hazard, severity) {
       periodicHazardTimer = setTimeout(async () => {
         if (!document.hidden) await loadHazardsFromServer();
         schedulePeriodicHazardRefresh();
-      }, document.hidden ? 900000 : 300000 + Math.floor(Math.random() * 30000));
+      }, document.hidden ? 900000 : 60000 + Math.floor(Math.random() * 30000));
     }
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) loadHazardsFromServer();

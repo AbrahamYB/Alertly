@@ -107,7 +107,7 @@ stream/
 ### Hazards (Admin)
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| GET | `/hazards/data` | — | Compact, cacheable public hazard GeoJSON scoped by viewport and enabled types |
+| GET | `/hazards/data` | — | Compact, cacheable official hazard GeoJSON scoped by viewport and enabled types |
 | GET | `/api/admin/hazards` | `requireAdmin` | Full admin hazard list |
 | POST | `/hazards/publish` | `requireAdmin` | Create new hazard |
 | PATCH | `/api/admin/hazards/:id` | `requireAdmin` | Edit hazard |
