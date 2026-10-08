@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -44,4 +45,22 @@ test("public report map refreshes existing markers after moderation changes", ()
   assert.ok(html.includes("const reportSignature = report =>"));
   assert.ok(html.includes("reportSignature(incoming) !== reportSignature(entry.data)"));
   assert.ok(html.includes("incomingById"));
+});
+
+test("every hazard surface uses the shared icon taxonomy", () => {
+  for (const filename of ["index.html", "report.html", "moderation.html", "hazard-admin.html"]) {
+    assert.ok(readPage(filename).includes('<script src="/hazard-ui.js"></script>'), `${filename} must load the shared hazard taxonomy`);
+  }
+
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(readPage("hazard-ui.js"), context);
+  const taxonomy = context.AlertlyHazards;
+  assert.equal(taxonomy.iconFor("earthquake"), "🫨");
+  assert.notEqual(taxonomy.iconFor("earthquake"), "⚡");
+  assert.equal(taxonomy.normalize("lightning storm"), "storm");
+  assert.equal(taxonomy.iconFor("storm", "severe lightning and thunder"), "⛈️");
+  assert.equal(taxonomy.iconFor("tornado"), "🌪️");
+  assert.equal(taxonomy.normalize("storm surge"), "flood");
+  assert.equal(new Set(taxonomy.categories.map(category => category.icon)).size, taxonomy.categories.length);
 });

@@ -1,6 +1,6 @@
 # ALERTLY — CODEBASE MAP
 > Source of truth: the canonical private Git repository.
-> Last updated: 2026-10-07
+> Last updated: 2026-10-08
 > **Update this file after any significant code change using jCodeMunch.**
 
 ---
@@ -18,7 +18,7 @@ stream/
 │   ├── ai.js               ← Semantic chat scope classifier + Groq answers/search
 │   ├── media-compressor.js ← 720p / 2MB video & image compressor (vladaad/discordcompressor architecture)
 │   ├── report-moderator-ai.js ← Groq vision + report credibility verification
-│   ├── domain.js           ← Data normalization + hazard clustering
+│   ├── domain.js           ← Data normalization and canonical hazard categories
 │   ├── fixed-schedule.js   ← Fixed local-time schedule calculation for hazard refreshes
 │   ├── hazard-region.js    ← Viewport bbox filter
 │   ├── provider-status.js  ← Automation provider health reader
@@ -36,6 +36,7 @@ stream/
 ├── installer/scripts/setup.js ← Hardware-aware installation configuration
 │
 ├── index.html              ← Public map + AI chat with live 15-prompt daily quota badge
+├── hazard-ui.js            ← Shared browser hazard labels, colors, aliases, and icons
 ├── report.html             ← Report submission form (~98 KB inline, image/video support)
 ├── moderation.html         ← Moderation dashboard with removal request review & resolution
 ├── hazard-admin.html       ← Admin hazard editor (authenticated / localhost dev)
@@ -70,6 +71,7 @@ stream/
 | Method | Path | Guard | Handler |
 |--------|------|-------|---------|
 | GET | `/` | — | Serves `index.html` |
+| GET | `/hazard-ui.js` | — | Shared hazard taxonomy used by every map and report surface |
 | GET | `/report` | — | Serves `report.html` |
 | GET | `/moderation` | — | Serves `moderation.html` |
 | GET | `/hazard-admin` | `requireAdmin` | Serves `hazard-admin.html` |

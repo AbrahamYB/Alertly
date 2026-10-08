@@ -1171,15 +1171,13 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/hazard-ui.js"></script>
   <script>
-    const CATEGORIES = [
-      { id: "fire", label: "🔥 Fire", color: "#ef4444" },
-      { id: "flood", label: "🌊 Flood", color: "#0ea5e9" },
-      { id: "volcano", label: "🌋 Volcanic Activity", color: "#b91c1c" },
-      { id: "landslide", label: "⛰️ Landslide", color: "#a16207" },
-      { id: "earthquake", label: "🫨 Earthquake", color: "#71717a" },
-      { id: "other", label: "❓ Other", color: "#6366f1" }
-    ];
+    const CATEGORIES = AlertlyHazards.categories.map(category => ({
+      id: category.id,
+      label: `${category.icon} ${category.label}`,
+      color: category.color
+    }));
 
     const COLOR_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.color]));
 
@@ -1415,13 +1413,7 @@
     }
 
     function normalizeCategory(typeStr) {
-      const s = String(typeStr || "").toLowerCase();
-      if (s.includes("fire") || s.includes("thermal") || s.includes("burn") || s.includes("🔥")) return "fire";
-      if (s.includes("flood") || s.includes("rain") || s.includes("water") || s.includes("surge") || s.includes("🌊")) return "flood";
-      if (s.includes("volcan") || s.includes("lava") || s.includes("eruption") || s.includes("ash") || s.includes("🌋")) return "volcano";
-      if (s.includes("landslide") || s.includes("mudslide") || s.includes("debris") || s.includes("rockfall") || s.includes("⛰️") || s.includes("🏔️")) return "landslide";
-      if (s.includes("earthquake") || s.includes("seismic") || s.includes("tremor") || s.includes("quake") || s.includes("🫨") || s.includes("⚡")) return "earthquake";
-      return "other";
+      return AlertlyHazards.normalize(typeStr);
     }
 
     function formatRelativeAge(timestamp) {

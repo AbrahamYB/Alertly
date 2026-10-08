@@ -1722,7 +1722,7 @@
 <div class="main">
       <div class="map-title">
         <h1>Community Reports</h1>
-        <div id="currentType" class="subtitle">Selected: ❓ Other</div>
+        <div id="currentType" class="subtitle">Selected: ⚠️ Other Hazards</div>
       </div>
       <div id="map"></div>
     </div>
@@ -1798,6 +1798,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/hazard-ui.js"></script>
   <script>
     const chipBar = document.getElementById("chipBar");
     const currentType = document.getElementById("currentType");
@@ -1828,7 +1829,7 @@
     const radiusSlider = document.getElementById("radiusSlider");
     const radiusValue = document.getElementById("radiusValue");
 
-let selectedType = "❓ Other";
+let selectedType = `${AlertlyHazards.byId.other.icon} ${AlertlyHazards.byId.other.label}`;
     let selectedRadius = 300;
     let userCoords = null;
     let mapMovedByUser = false;
@@ -2006,15 +2007,8 @@ const map = L.map("map", {
 
     let miniMap = null, miniMapInitialized = false, miniRadiusCircle = null, miniCustomMarker = null;
 
-const TYPES = ["🔥 Fire", "🌊 Flood", "🌋 Volcanic Activity", "⛰️ Landslide", "🫨 Earthquake", "❓ Other"];
-    const HAZARD_COLORS = {
-      "🔥": "#ef4444",
-      "🌊": "#0ea5e9",
-      "🌋": "#b91c1c",
-      "⛰️": "#a16207",
-      "🫨": "#71717a",
-      "❓": "#6366f1"
-    };
+const TYPES = AlertlyHazards.categories.map(category => `${category.icon} ${category.label}`);
+    const HAZARD_COLORS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.icon, category.color]));
     function getHazardColor(type = selectedType) {
       const emoji = (type || "").split(" ")[0];
       return HAZARD_COLORS[emoji] || "#6366f1";

@@ -63,11 +63,12 @@ stream/
 │   ├── staff-access.js          ← Invite-only staff accounts and ownership transfer
 │   ├── task-queue.js            ← Bounded in-process media queue
 │   ├── postgres-job-queue.js    ← Durable PostgreSQL queue foundation
-│   ├── domain.js                 ← Normalization, validation & hazard clustering
+│   ├── domain.js                 ← Normalization, validation & canonical hazard categories
 │   ├── hazard-region.js          ← Viewport bbox filtering & spatial calculations
 │   └── provider-status.js        ← Feed provider health state reader
 │
 ├── index.html                    ← Public interactive map + AI chat (~54 KB inline)
+├── hazard-ui.js                  ← Shared browser hazard labels, colors, aliases, and icons
 ├── report.html                   ← Report submission form with GPS/Area tools (~98 KB inline)
 ├── moderation.html               ← Moderation dashboard with AI flags & image viewer (~38 KB)
 ├── hazard-admin.html             ← Authenticated admin hazard editor & inspector
@@ -132,7 +133,7 @@ stream/
 ### Hazard Administration (Localhost Only)
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| GET | `/hazards/data` | — | Public hazard GeoJSON (viewport-scoped, grouped) |
+| GET | `/hazards/data` | — | Public hazard GeoJSON with source coordinates preserved |
 | GET | `/api/admin/hazards` | `requireAdmin` | Full admin hazard dataset |
 | POST | `/hazards/publish` | `requireAdmin` | Create official hazard |
 | PATCH | `/api/admin/hazards/:id` | `requireAdmin` | Update existing hazard |
@@ -250,7 +251,7 @@ The automation engine runs as a supervisor-managed child process (`worker_manage
 
 ### Public Map (`index.html`)
 - Leaflet map with OpenStreetMap & Satellite base layers.
-- Viewport-scoped dynamic hazard loading with Haversine distance clustering (≤10 km radius for same-type hazards).
+- Viewport-scoped dynamic hazard loading that keeps every event separate at its source-reported coordinates.
 - Public approved community report layer.
 - Collapsible AI assistant panel with character-by-character streaming, session reset, and conversation export to text.
 
@@ -316,7 +317,7 @@ npm test
    - Enforced strict HTTP `Cache-Control: no-store, no-cache, must-revalidate` across all Express API routes (`/api/moderation/reports`, `/api/reports/data`, `/hazards/data`, `/api/admin/hazards`) and timestamped client requests (`?_t=...`) to stop stale browser caching.
    - Fixed topbar flex styling so navigation buttons sit on a single line without wrapping.
 10. **Moderation Queue & Category Synchronization**:
-    - Synced `CATEGORIES` in `moderation.html` to exactly match the 6 community categories on `report.html` (`🔥 Fire`, `🌊 Flood`, `🌋 Volcanic Activity`, `⛰️ Landslide`, `🫨 Earthquake`, `❓ Other`).
+    - All public, report, moderation, and hazard administration surfaces now use the shared taxonomy in `hazard-ui.js`; lightning and thunder remain storm subtypes, while earthquakes always use the seismic category icon.
     - Replaced the horizontal accordion with a vertical category rail (`.cat-sidebar`) beside the review queue.
     - Displays `🌐 All types` and all 6 categories permanently with live item count badges (`.cat-badge`) and active state switching.
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.

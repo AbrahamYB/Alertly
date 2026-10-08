@@ -980,7 +980,7 @@ scroll-behavior: auto !important;
         </div>
 
         <div class="toggle-row">
-          <span>🏔️ Landslides / Mudslides</span>
+          <span>⛰️ Landslides / Mudslides</span>
           <label class="switch"><input type="checkbox" id="landslideToggle"><span class="slider"></span></label>
         </div>
 
@@ -1036,8 +1036,8 @@ scroll-behavior: auto !important;
     <div class="chat-body hidden glass" id="chat-body"></div>
   </div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/hazard-ui.js"></script>
   <script>
     const WORLD_BOUNDS = L.latLngBounds([[-85.0511, -180], [85.0511, 180]]);
     const map = L.map("map", {
@@ -1175,16 +1175,7 @@ scroll-behavior: auto !important;
     });
 
     function normalizeHazardCategory(typeStr) {
-      const s = String(typeStr || "").toLowerCase();
-      if (s.includes("fire") || s.includes("thermal") || s.includes("burn") || s.includes("🔥")) return "fire";
-      if (s.includes("flood") || s.includes("rain") || s.includes("water") || s.includes("surge") || s.includes("🌊")) return "flood";
-      if (s.includes("volcan") || s.includes("lava") || s.includes("eruption") || s.includes("ash") || s.includes("🌋")) return "volcano";
-      if (s.includes("landslide") || s.includes("mudslide") || s.includes("debris") || s.includes("rockfall") || s.includes("⛰️") || s.includes("🏔️")) return "landslide";
-      if (s.includes("earthquake") || s.includes("seismic") || s.includes("tremor") || s.includes("quake") || s.includes("🫨") || s.includes("⚡")) return "earthquake";
-      if (s.includes("storm") || s.includes("cyclone") || s.includes("hurricane") || s.includes("typhoon") || s.includes("tornado") || s.includes("wind") || s.includes("🌪️") || s.includes("🌀")) return "storm";
-      if (s.includes("drought") || s.includes("arid") || s.includes("dry") || s.includes("🌵") || s.includes("🏜️")) return "drought";
-      if (s.includes("heat") || s.includes("warm") || s.includes("temperature") || s.includes("🌡️")) return "heatwave";
-      return "other";
+      return AlertlyHazards.normalize(typeStr);
     }
 
     let hazardLoadController = null;
@@ -1235,10 +1226,7 @@ scroll-behavior: auto !important;
             if (feature.geometry.type === "Point") {
               const [lng, lat] = feature.geometry.coordinates;
               const style = styleFor(hType, severity);
-              const hazardSymbols = {
-                flood: "🌊", fire: "🔥", storm: "🌪️", volcano: "🌋",
-                landslide: "⛰️", earthquake: "⚡", drought: "🌵", heatwave: "🌡️", other: "⚠️"
-              };
+              const hazardIcon = AlertlyHazards.iconFor(hType, `${title} ${description}`);
               layer = L.marker([lat, lng], {
                 keyboard: true,
                 riseOnHover: true,
@@ -1246,7 +1234,7 @@ scroll-behavior: auto !important;
                 title: title,
                 icon: L.divIcon({
                   className: "hazard-symbol-wrap",
-                  html: `<div class="hazard-symbol" style="--hazard-color:${style.color}"><span>${hazardSymbols[hType] || hazardSymbols.other}</span></div>`,
+                  html: `<div class="hazard-symbol" style="--hazard-color:${style.color}"><span>${hazardIcon}</span></div>`,
                   iconSize: [26, 26],
                   iconAnchor: [13, 13],
                   popupAnchor: [0, -13]

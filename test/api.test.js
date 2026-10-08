@@ -40,6 +40,13 @@ test("GET /health returns healthy service status", async () => {
   assert.equal(data.service, "alertly");
 });
 
+test("GET /hazard-ui.js serves the shared hazard taxonomy", async () => {
+  const response = await fetch(`${BASE_URL}/hazard-ui.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /javascript/);
+  assert.match(await response.text(), /function iconFor/);
+});
+
 test("nearby hazards retain separate provider coordinates at every map scale", async () => {
   const detectedAt = new Date().toISOString();
   const coordinates = [[-87.6, 15.1], [-87.55, 15.12]];
@@ -218,16 +225,17 @@ test("Full Community Report lifecycle: publish, removal request, resolution, del
   assert.equal(restoreRes.status, 200);
   const restoredPublic = await (await fetch(`${BASE_URL}/api/reports/data`)).json();
   assert.equal(restoredPublic.some(report => report.id === reportId), true);
-  const officialMapResponse = await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
+  const officialMapResponse = await fetch(`${BASE_URL}/hazards/data?bbox=-87.66,15.48,-87.63,15.51&types=flood`);
   assert.match(officialMapResponse.headers.get("cache-control") || "", /max-age=300/);
   assert.match(officialMapResponse.headers.get("cache-control") || "", /s-maxage=300/);
   const officialMapHazards = await officialMapResponse.json();
   assert.equal(officialMapHazards.features.some(feature => feature.properties?.reportId === reportId), false, "The heavily cached official feed must not contain community reports");
 
-  const communityMapResponse = await fetch(`${BASE_URL}/api/reports/data?view=map&bbox=-87.66,15.48,-87.63,15.51&types=flash-flood`);
+  const communityMapResponse = await fetch(`${BASE_URL}/api/reports/data?view=map&bbox=-87.66,15.48,-87.63,15.51&types=flood`);
   assert.match(communityMapResponse.headers.get("cache-control") || "", /no-store/);
   const communityMapHazards = await communityMapResponse.json();
   assert.equal(communityMapHazards.features.some(feature => feature.properties?.reportId === reportId), true, "Approved community reports must appear on the main map feed");
+  assert.equal(communityMapHazards.features.find(feature => feature.properties?.reportId === reportId)?.properties.hazard, "flood");
   assert.equal(communityMapHazards.features.some(feature => feature.properties?.supportingEvidence), false, "Public map data must omit detailed internal evidence");
 
   // 4. Resolve removal request (accept)

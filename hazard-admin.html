@@ -713,28 +713,11 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/hazard-ui.js"></script>
   <script>
-    const HAZARD_ICONS = {
-      flood: "🌊", fire: "🔥", storm: "🌀", volcano: "🌋",
-      landslide: "⛰️", earthquake: "🫨", drought: "🏜️", heatwave: "🌡️", other: "⚠️"
-    };
-
-    const CATEGORY_NAMES = {
-      earthquake: "Earthquake / Seismic",
-      fire: "Wildfire / Thermal",
-      flood: "Flooded Areas",
-      storm: "Storms & Cyclones",
-      volcano: "Volcanic Activity",
-      landslide: "Landslides",
-      drought: "Drought & Water",
-      heatwave: "Extreme Heat",
-      other: "Other Hazards"
-    };
-
-    const HAZARD_COLORS = {
-      flood: "#0ea5e9", fire: "#ef4444", storm: "#818cf8", volcano: "#dc2626",
-      landslide: "#a16207", earthquake: "#71717a", drought: "#f59e0b", heatwave: "#f97316", other: "#6366f1"
-    };
+    const HAZARD_ICONS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.icon]));
+    const CATEGORY_NAMES = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.label]));
+    const HAZARD_COLORS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.color]));
 
     const elements = {
       search: document.getElementById("search"),
@@ -802,16 +785,7 @@
     }
 
     function normalizeHazardCategory(typeStr) {
-      const s = String(typeStr || "").toLowerCase();
-      if (s.includes("fire") || s.includes("thermal") || s.includes("burn") || s.includes("🔥")) return "fire";
-      if (s.includes("flood") || s.includes("rain") || s.includes("water") || s.includes("surge") || s.includes("🌊")) return "flood";
-      if (s.includes("volcan") || s.includes("lava") || s.includes("eruption") || s.includes("ash") || s.includes("🌋")) return "volcano";
-      if (s.includes("landslide") || s.includes("mudslide") || s.includes("debris") || s.includes("rockfall") || s.includes("⛰️") || s.includes("🏔️")) return "landslide";
-      if (s.includes("earthquake") || s.includes("seismic") || s.includes("tremor") || s.includes("quake") || s.includes("🫨") || s.includes("⚡")) return "earthquake";
-      if (s.includes("storm") || s.includes("cyclone") || s.includes("hurricane") || s.includes("typhoon") || s.includes("tornado") || s.includes("wind") || s.includes("🌪️") || s.includes("🌀")) return "storm";
-      if (s.includes("drought") || s.includes("arid") || s.includes("dry") || s.includes("🌵") || s.includes("🏜️")) return "drought";
-      if (s.includes("heat") || s.includes("warm") || s.includes("temperature") || s.includes("🌡️")) return "heatwave";
-      return "other";
+      return AlertlyHazards.normalize(typeStr);
     }
 
     function createHazardLayer(hazard) {
@@ -830,7 +804,7 @@
           title: hazard.properties.title || "",
           icon: L.divIcon({
             className: "hazard-symbol-wrap",
-            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${HAZARD_ICONS[hazardType] || "⚠️"}</span></div>`,
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${AlertlyHazards.iconFor(hazardType, hazard.properties.title)}</span></div>`,
             iconSize: [24, 24],
             iconAnchor: [12, 12]
           })
@@ -901,7 +875,7 @@
         const cardsHtml = items.map(h => `
           <button class="hazard-card ${selectedHazard?.id === h.id ? "active" : ""}" data-id="${escapeHtml(h.id)}">
             <div class="card-row">
-              <span class="icon">${HAZARD_ICONS[normalizeHazardCategory(h.properties.hazard)] || "⚠️"}</span>
+              <span class="icon">${AlertlyHazards.iconFor(h.properties.hazard, h.properties.title)}</span>
               <span class="title">${escapeHtml(h.properties.title)}</span>
             </div>
             <div class="meta">${escapeHtml(h.properties.source)} · ${new Date(h.properties.lastUpdatedAt || h.properties.detectedAt).toLocaleDateString()}</div>

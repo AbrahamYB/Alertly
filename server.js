@@ -485,6 +485,11 @@ app.post("/session/reset", (req, res) => {
   res.json({ ok: true, reset: true });
 });
 
+app.get("/hazard-ui.js", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+  res.type("application/javascript").sendFile(path.join(__dirname, "hazard-ui.js"));
+});
+
 
 app.get(["/", "/index.html", "/index.html.var"], (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");

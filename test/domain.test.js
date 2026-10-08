@@ -35,6 +35,17 @@ test("NASA thermal hotspots are explained as satellite heat detections", () => {
   assert.equal(hazard.properties.sourceType, "satellite detection");
 });
 
+test("lightning and thunder reports use the existing storm category", () => {
+  for (const hazard of ["Lightning Storm", "Severe Thunderstorm", "Tornado"]) {
+    const normalized = normalizeHazard({
+      type: "Feature",
+      properties: { hazard },
+      geometry: { type: "Point", coordinates: [-87, 15] },
+    });
+    assert.equal(normalized.properties.hazard, "storm");
+  }
+});
+
 test("hazards leave the public map after 15 days without renewed evidence", () => {
   const now = new Date("2026-02-01T00:00:00Z").getTime();
   const active = normalizeHazard({
