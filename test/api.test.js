@@ -40,6 +40,36 @@ test("GET /health returns healthy service status", async () => {
   assert.equal(data.service, "alertly");
 });
 
+test("nearby hazards retain separate provider coordinates at every map scale", async () => {
+  const detectedAt = new Date().toISOString();
+  const coordinates = [[-87.6, 15.1], [-87.55, 15.12]];
+  const features = coordinates.map((point, index) => ({
+    type: "Feature",
+    id: `location-accuracy-${index + 1}`,
+    geometry: { type: "Point", coordinates: point },
+    properties: {
+      hazard: "flood",
+      title: `Independent flood ${index + 1}`,
+      severity: "medium",
+      confidence: "confirmed",
+      status: "active",
+      source: "test-provider",
+      sourceType: "official test feed",
+      detectedAt,
+      lastSeenAt: detectedAt,
+      automated: true,
+    },
+  }));
+  fs.writeFileSync(process.env.HAZARDS_FILE, `${JSON.stringify({ type: "FeatureCollection", features })}\n`);
+
+  const response = await fetch(`${BASE_URL}/hazards/data?bbox=-88,14,-87,16&types=flood`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.features.length, 2);
+  assert.deepEqual(data.features.map((feature) => feature.geometry.coordinates).sort(), coordinates.sort());
+  assert.equal(data.features.some((feature) => feature.properties.grouped), false);
+});
+
 test("GET /api/auth/status reports authentication requirements and roles", async () => {
   const res = await fetch(`${BASE_URL}/api/auth/status`);
   assert.equal(res.status, 200);

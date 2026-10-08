@@ -1231,7 +1231,6 @@ scroll-behavior: auto !important;
             const notes = feature.properties.notes || "";
             const title = feature.properties.title || `${hType} alert`;
             const description = feature.properties.description || notes;
-            const groupedCount = Number(feature.properties.groupedEventCount || 0);
             let layer;
             if (feature.geometry.type === "Point") {
               const [lng, lat] = feature.geometry.coordinates;
@@ -1261,16 +1260,15 @@ scroll-behavior: auto !important;
 
             if (layer) {
               const safe = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
-              const evidenceSources = feature.properties.evidenceSources || [];
               const popupHtml = `
                 <div class="hazard-popup">
                   <div class="hazard-popup__title">${safe(title)}</div>
                   <div class="hazard-popup__meta">
                     <b>Severity:</b> ${safe(severity)} · <b>Confidence:</b> ${safe(feature.properties.confidence)}<br/>
-                    <b>Source type:</b> ${safe(feature.properties.sourceType)}
+                    <b>Source type:</b> ${safe(feature.properties.sourceType)}<br/>
+                    <b>Location:</b> ${feature.properties.locationEstimated ? "Approximate source location" : feature.properties.communityReport ? "Submitted report location" : "Source-reported location"}
                   </div>
                   ${description ? `<div class="hazard-popup__notes">${safe(description)}</div>` : ""}
-                  ${groupedCount > 1 ? `<div style="margin-top:8px;"><b>${groupedCount} original detections</b>${evidenceSources.length ? ` · ${safe(evidenceSources.join(", "))}` : ""}</div>` : ""}
                   ${feature.properties.sourceUrl ? `
                     <div style="margin-top:10px;">
                        <a class="hazard-popup__link" href="${safe(feature.properties.sourceUrl)}" target="_blank" rel="noopener noreferrer">🔗 View Official Report</a>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
 
 test("legacy hazard is upgraded to the unified model", () => {
   const hazard = normalizeHazard({
@@ -33,17 +33,6 @@ test("NASA thermal hotspots are explained as satellite heat detections", () => {
   });
   assert.match(hazard.properties.title, /Satellite heat detection/);
   assert.equal(hazard.properties.sourceType, "satellite detection");
-});
-
-test("nearby point hazards of the same type are grouped automatically", () => {
-  const fireA = normalizeHazard({ type: "Feature", id: "a", properties: { hazard: "fire", source: "nasa" }, geometry: { type: "Point", coordinates: [-87, 15] } });
-  const fireB = normalizeHazard({ type: "Feature", id: "b", properties: { hazard: "fire", source: "nasa" }, geometry: { type: "Point", coordinates: [-87.05, 15.03] } });
-  const quake = normalizeHazard({ type: "Feature", id: "c", properties: { hazard: "earthquake", source: "usgs" }, geometry: { type: "Point", coordinates: [-87.04, 15.02] } });
-  const result = groupNearbyPointHazards({ type: "FeatureCollection", features: [fireA, fireB, quake] }, 20);
-  assert.equal(result.features.length, 2);
-  const group = result.features.find((feature) => feature.properties.grouped);
-  assert.equal(group.properties.groupedEventCount, 2);
-  assert.deepEqual(group.properties.supportingEvidence.map((item) => item.hazardId).sort(), ["a", "b"]);
 });
 
 test("hazards leave the public map after 15 days without renewed evidence", () => {

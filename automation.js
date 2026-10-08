@@ -6,6 +6,7 @@ import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
 import { isDeprecatedHazardFeature } from "./lib/domain.js";
+import { resolveCopernicusEventLocation } from "./lib/hazard-location.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -336,6 +337,7 @@ async function fetchCopernicusEMS() {
           : "other";
 
         let mappedAreaSummary = "";
+        let areaNames = [];
         try {
            const actDetailUrl = `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${e.code}`;
            const actResp = await fetchOfficial(actDetailUrl);
@@ -343,7 +345,7 @@ async function fetchCopernicusEMS() {
               const actData = await actResp.json();
               const activationInfo = actData.results?.[0];
               if (activationInfo && activationInfo.aois && activationInfo.aois.length > 0) {
-                 const areaNames = [...new Set(activationInfo.aois.map((aoi) => String(aoi.name || "").trim()).filter(Boolean))];
+                 areaNames = [...new Set(activationInfo.aois.map((aoi) => String(aoi.name || "").trim()).filter(Boolean))];
                  const areaLabel = areaNames.slice(0, 3).join(", ");
                  mappedAreaSummary = ` Copernicus mapped ${activationInfo.aois.length} area${activationInfo.aois.length === 1 ? "" : "s"}${areaLabel ? ` (${areaLabel})` : ""}.`;
               }
@@ -356,21 +358,27 @@ async function fetchCopernicusEMS() {
         // event marker so the map does not imply that the entire AOI is affected.
         if (centroidMatch) {
            const activationAt = isoTimestamp(e.activationTime);
+           const location = resolveCopernicusEventLocation({
+              hazard,
+              title: e.name,
+              areaNames,
+              providerCoordinates: coords,
+           });
            features.push({
               type: "Feature",
-              geometry: { type: "Point", coordinates: coords },
+              geometry: { type: "Point", coordinates: location.coordinates },
               properties: {
                  hazard: hazard,
                  severity: "high",
                  confidence: "confirmed",
                  title: e.name || `Copernicus EMS activation ${e.code}`,
-                 notes: `Copernicus EMS activation: ${e.name} (${e.code}).${mappedAreaSummary}`,
+                 notes: `Copernicus EMS activation: ${e.name} (${e.code}).${mappedAreaSummary} Location: ${location.source}.`,
                  automated: true,
                  source: "copernicus",
                  sourceType: "official emergency mapping activation",
                  sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
                  extId: `ems_${e.code}`,
-                 locationEstimated: true,
+                 locationEstimated: location.estimated,
                  detectedAt: activationAt,
                  lastUpdatedAt: activationAt,
                  createdAt: activationAt

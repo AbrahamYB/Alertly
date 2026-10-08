@@ -161,8 +161,7 @@ const DEMO_HAZARDS = {
         sourceUrl: "https://earthquake.usgs.gov/",
         notes: "Depth: 10.0 km. Light shaking reported in southern metropolitan department.",
         createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        lastUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        groupedEventCount: 1
+        lastUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
       }
     },
     {
@@ -183,8 +182,7 @@ const DEMO_HAZARDS = {
         sourceUrl: "https://firms.modaps.eosdis.nasa.gov/",
         notes: "VIIRS NOAA-20 satellite thermal detection (FRP: 12.4 MW).",
         createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-        lastUpdatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-        groupedEventCount: 1
+        lastUpdatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
       }
     },
     {
@@ -205,8 +203,7 @@ const DEMO_HAZARDS = {
         sourceUrl: "https://www.gdacs.org/",
         notes: "Yellow aviation alert level. Dispersal toward Southwest valleys.",
         createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        lastUpdatedAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        groupedEventCount: 1
+        lastUpdatedAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
       }
     }
   ]

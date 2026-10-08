@@ -182,8 +182,6 @@ stream/
 | `isReportPublic(report)` | Single visibility decision shared by every public feed |
 | `reconcileReportVisibility(report)` | Upgrade legacy reports to the canonical visibility state |
 | `normalizeCollection(collection)` | Normalize a whole FeatureCollection |
-| `distanceKm(a, b)` | Haversine distance between two [lat,lng] points |
-| `groupNearbyPointHazards(collection, radiusKm)` | Cluster point hazards within radius for display |
 
 ### `lib/hazard-region.js`
 | Function | Description |
@@ -191,6 +189,11 @@ stream/
 | `getHazardBbox()` | Read `HAZARD_BBOX` env or return Central America default |
 | `coordinatesInBbox(coords, bbox)` | True if [lat,lng] is inside bbox |
 | `featureInHazardRegion(feature, bbox)` | Filter a feature to the active region |
+
+### `lib/hazard-location.js`
+| Function | Description |
+|----------|-------------|
+| `resolveCopernicusEventLocation(input)` | Prefer an authoritative named-hazard location and otherwise preserve the disclosed provider center |
 
 ### `lib/provider-status.js`
 | Function | Description |
@@ -352,8 +355,7 @@ Key functions
     "status": "active|monitoring|resolved",
     "source": "string",
     "sourceType": "admin verified|automated|...",
-    "createdAt": "ISO",  "lastUpdatedAt": "ISO",  "expiresAt": "ISO|null",
-    "groupedEventCount": 1
+    "createdAt": "ISO",  "lastUpdatedAt": "ISO",  "expiresAt": "ISO|null"
   }
 }
 ```
@@ -396,6 +398,7 @@ Provider quotas and prices are external, account-specific, and subject to change
 - Runtime reports/hazards remain file-backed in the demo build; `postgres-job-queue.js` is the optional durable queue foundation for organization deployments
 - `clearDraftGeometry()` in `report.html` is **function-scoped** — must use `addEventListener`, not `onclick`
 - Chat history is bounded to 15 user/assistant turns in server memory and is cleared by reset, expiry, or restart
+- Public hazard markers must retain the provider coordinates at every zoom level; do not average, group, or relocate separate events
 
 ---
 
@@ -411,7 +414,7 @@ npm test
 | Search opt-out | "don't search" disables web_search tool |
 | Hazard normalization | `normalizeHazard` validates + defaults all fields |
 | Report normalization | `normalizeReport` validates + defaults all fields |
-| Grouping | `groupNearbyPointHazards` clusters correctly |
+| Coordinate preservation | Nearby hazards remain separate and retain their source coordinates |
 | Report moderator AI | `evaluateReportWithAI` evaluates text & vision credibility |
 | Media Compressor | `autoCompressFile`, bitrate calculation, 2-pass libx264 with old-Windows fallback, 720p image/video output <=2MB |
 | HTTP lifecycle | Clean temporary server, auth, reports, removal resolution, deletion, and public-data sanitization |

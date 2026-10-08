@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import fs from "fs";
 import multer from "multer";
-import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
 import { readProviderStatus } from "./lib/provider-status.js";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { evaluateReportWithAI } from "./lib/report-moderator-ai.js";
@@ -1184,12 +1184,6 @@ app.get("/hazards/data", (req, res) => {
     const viewportBbox = requestedBbox.length === 4 && requestedBbox.every(Number.isFinite)
       ? requestedBbox
       : HAZARD_BBOX;
-    const longitudeSpan = Math.min(360, Math.abs(viewportBbox[2] - viewportBbox[0]));
-    const latitudeSpan = Math.min(145, Math.abs(viewportBbox[3] - viewportBbox[1]));
-    const middleLatitude = (viewportBbox[1] + viewportBbox[3]) / 2;
-    const widthKm = longitudeSpan * 111.32 * Math.max(0.2, Math.cos(middleLatitude * Math.PI / 180));
-    const heightKm = latitudeSpan * 111.32;
-    const displayRadiusKm = Math.max(10, Math.min(1200, Math.hypot(widthKm, heightKm) / 6));
     const normalized = {
       ...allHazards,
       features: allHazards.features.filter((feature) =>
@@ -1200,18 +1194,7 @@ app.get("/hazards/data", (req, res) => {
         && featureInHazardRegion(feature, viewportBbox)
       )
     };
-    const displayed = groupNearbyPointHazards(normalized, displayRadiusKm);
-    if (displayRadiusKm > 10) {
-      for (const feature of displayed.features) {
-        if (!feature.properties?.grouped) continue;
-        const count = feature.properties.groupedEventCount;
-        const label = String(feature.properties.hazard || "hazard").replace(/(^|-)(\w)/g, (_match, _dash, letter) => ` ${letter.toUpperCase()}`).trim();
-        feature.properties.title = `${label} — ${count} reports at this zoom`;
-        feature.properties.description = `${count} current ${feature.properties.hazard} reports are combined for map readability. Zoom in to separate them.`;
-        feature.properties.displayCluster = true;
-      }
-    }
-    return { type: "FeatureCollection", features: displayed.features.map(compactHazardForPublic) };
+    return { type: "FeatureCollection", features: normalized.features.map(compactHazardForPublic) };
   }, 300);
 });
 

@@ -226,8 +226,7 @@ All subsystems are isolated and fall back safely to base settings if granular ke
     "sourceType": "automated",
     "createdAt": "2026-09-05T10:00:00.000Z",
     "lastUpdatedAt": "2026-09-05T10:05:00.000Z",
-    "expiresAt": "2026-10-05T10:00:00.000Z",
-    "groupedEventCount": 1
+    "expiresAt": "2026-10-05T10:00:00.000Z"
   }
 }
 ```
@@ -241,7 +240,7 @@ The automation engine runs as a supervisor-managed child process (`worker_manage
 - **GDACS**: Multi-hazard global alerts (cyclones, floods, earthquakes, volcanoes).
 - **NASA EONET**: Natural hazard events filtered to valid 30-day active windows.
 - **RSOE EDIS**: Emergency and disaster information service events.
-- **Copernicus EMS**: Rapid mapping activations and emergency AOI polygons.
+- **Copernicus EMS**: One event marker per activation. AOI boundaries are mapping coverage metadata and are not displayed as hazard footprints.
 - **NASA FIRMS**: VIIRS NOAA-20 & NOAA-21 24-hour thermal hotspot detections (requires `FIRMS_MAP_KEY`).
 - **Stale Batch Rejection**: Automatically excludes expired records prior to saving to prevent re-adding already-purged events.
 
