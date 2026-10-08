@@ -3,7 +3,7 @@ import compression from "compression";
 import path from "path";
 import { fileURLToPath } from "url";
 import { loadEnvFile } from "node:process";
-import { answerChat, aiConfig } from "./lib/ai.js";
+import { answerChat, aiConfig, classifyChatScope } from "./lib/ai.js";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import fs from "fs";
@@ -28,7 +28,7 @@ import {
   MAX_CHAT_TURNS,
   OUT_OF_SCOPE_REPLY,
   buildChatSystemPrompt,
-  chatScopeDecision,
+  localChatResponse,
   normalizeClientChatHistory,
   recentChatContext,
 } from "./lib/chat-policy.js";
@@ -1006,11 +1006,11 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
     : dailyQuotaTracker.check(req);
 
   const clientHistory = normalizeClientChatHistory(req.body?.history);
-  const scope = chatScopeDecision(message, clientHistory);
-  if (!scope.allowed || scope.directReply) {
+  const localReply = localChatResponse(message);
+  if (localReply) {
     const payload = {
-      reply: scope.directReply || OUT_OF_SCOPE_REPLY,
-      scopeRestricted: !scope.allowed,
+      reply: localReply,
+      scopeRestricted: false,
       handledLocally: true,
       quotaRemaining: quota.remaining,
       quotaUsed: quota.used,
@@ -1050,10 +1050,29 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
   const heartbeat = wantsJson ? null : setInterval(() => { if (!res.destroyed) res.write(': heartbeat\n\n'); }, 5000);
   res.on('close', () => controller.abort());
 
-  const quotaAfterIncrement = staffHasUnlimitedChat ? quota : dailyQuotaTracker.increment(req);
-
   try {
     const config = aiConfig();
+    const allowedByScope = await classifyChatScope(message, recentChatContext(contextHistory), {
+      signal: controller.signal,
+      config,
+      onUsage: (entry) => aiUsage.record(entry),
+    });
+    if (!allowedByScope) {
+      if (wantsJson) {
+        return res.json({
+          reply: OUT_OF_SCOPE_REPLY,
+          scopeRestricted: true,
+          quotaRemaining: quota.remaining,
+          quotaUsed: quota.used,
+          quotaLimit: quota.limit,
+          quotaUnlimited: staffHasUnlimitedChat,
+        });
+      }
+      send({ chunk: OUT_OF_SCOPE_REPLY, scopeRestricted: true });
+      send({ done: true, quotaRemaining: quota.remaining, quotaUnlimited: staffHasUnlimitedChat });
+      return;
+    }
+    const quotaAfterIncrement = staffHasUnlimitedChat ? quota : dailyQuotaTracker.increment(req);
     if (!wantsJson) {
       send({
         status: 'Preparing your answer…',

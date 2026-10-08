@@ -59,21 +59,6 @@ test("GET /api/chat/quota returns daily quota tracking state", async () => {
   assert.equal(data.limit, 15);
 });
 
-test("POST /chat rejects obvious off-topic use without consuming AI quota", async () => {
-  const before = await (await fetch(`${BASE_URL}/api/chat/quota`)).json();
-  const res = await fetch(`${BASE_URL}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ message: "Write Python code for a video game", responseMode: "json" }),
-  });
-  assert.equal(res.status, 200);
-  const data = await res.json();
-  assert.equal(data.scopeRestricted, true);
-  assert.match(data.reply, /environmental hazards/);
-  const after = await (await fetch(`${BASE_URL}/api/chat/quota`)).json();
-  assert.equal(after.used, before.used);
-});
-
 test("POST /chat handles greetings locally with an Alertly-focused answer", async () => {
   const res = await fetch(`${BASE_URL}/chat`, {
     method: "POST",

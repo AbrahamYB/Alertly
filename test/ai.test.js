@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aiConfig, answerChat } from '../lib/ai.js';
+import { aiConfig, answerChat, classifyChatScope } from '../lib/ai.js';
 
 test('Groq uses current browser search tools while preserving the question', async () => {
   const messages = [{ role: 'system', content: 'Cite sources.' }, { role: 'user', content: 'Latest Honduras disasters?' }];
@@ -34,4 +34,53 @@ test('missing keys, exhausted quota and empty answers produce useful errors', as
   const config = aiConfig({ AI_API_KEY: 'test-key' });
   await assert.rejects(answerChat([], { config, request: async () => ({ ok: false, status: 429 }) }), /quota/);
   await assert.rejects(answerChat([], { config, request: async () => ({ ok: true, json: async () => ({}) }) }), /empty answer/);
+});
+
+test('semantic chat guard classifies intent with context and never enables search', async () => {
+  const config = aiConfig({ AI_API_KEY: 'test-key' });
+  const usage = [];
+  const allowed = await classifyChatScope('What should I do next?', [
+    { role: 'user', content: 'There is floodwater at the bridge.' },
+    { role: 'assistant', content: 'Avoid the bridge.' },
+  ], {
+    config,
+    onUsage: (entry) => usage.push(entry),
+    request: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      assert.equal(body.tools, undefined);
+      assert.equal(body.temperature, 0);
+      assert.match(body.messages[0].content, /intent gate for Alertly/);
+      assert.match(body.messages[1].content, /floodwater/);
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => ({ choices: [{ message: { content: 'IN_SCOPE' } }], usage: { total_tokens: 42 } }),
+      };
+    },
+  });
+  assert.equal(allowed, true);
+  assert.equal(usage[0].category, 'chat_guard');
+  assert.equal(usage[0].usedSearch, false);
+});
+
+test('semantic chat guard rejects unrelated intent and fails closed on unclear output', async () => {
+  const config = aiConfig({ AI_API_KEY: 'test-key' });
+  const rejected = await classifyChatScope('Who is Verity?', [], {
+    config,
+    request: async () => ({
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({ choices: [{ message: { content: 'OUT_OF_SCOPE' } }] }),
+    }),
+  });
+  assert.equal(rejected, false);
+
+  await assert.rejects(classifyChatScope('Ambiguous request', [], {
+    config,
+    request: async () => ({
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({ choices: [{ message: { content: 'Maybe' } }] }),
+    }),
+  }), /invalid decision/);
 });

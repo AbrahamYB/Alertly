@@ -15,7 +15,7 @@ stream/
 ├── package.json
 │
 ├── lib/
-│   ├── ai.js               ← Groq chat (compound-mini, web search, 413 retry)
+│   ├── ai.js               ← Semantic chat scope classifier + Groq answers/search
 │   ├── media-compressor.js ← 720p / 2MB video & image compressor (vladaad/discordcompressor architecture)
 │   ├── report-moderator-ai.js ← Groq vision + report credibility verification
 │   ├── domain.js           ← Data normalization + hazard clustering
@@ -99,7 +99,7 @@ stream/
 ### AI Chat
 | Method | Path | Guard | Description |
 |--------|------|-------|-------------|
-| POST | `/chat` | `chatLimiterUnlessStaff` | JSON by default, legacy SSE support, low-cost topic guard, 15 prompts/day public quota, staff bypass, 15-turn context |
+| POST | `/chat` | `chatLimiterUnlessStaff` | JSON by default, legacy SSE support, semantic no-search scope gate, 15 prompts/day public quota, staff bypass, 15-turn context |
 | GET | `/api/chat/quota` | — | Check the public daily quota or signed-in staff unlimited status |
 | GET | `/api/staff/ai-usage` | `requireStaff` | Privacy-safe daily AI request/token aggregates and latest provider limit headers |
 | POST | `/session/reset` | — | Clear chat session cookie |
@@ -163,6 +163,7 @@ stream/
 |----------|-------------|
 | `aiConfig(env)` | Returns `{provider, baseUrl, model, key, search}` from env |
 | `answerChat(messages, opts)` | Groq API call, web search, 413 retry with trimmed history |
+| `classifyChatScope(message, history, opts)` | Low-output semantic scope decision using recent context and no web search |
 
 ### `lib/report-moderator-ai.js`
 | Function | Description |
