@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isHazardCurrent, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "../lib/domain.js";
 
 test("legacy hazard is upgraded to the unified model", () => {
   const hazard = normalizeHazard({
@@ -12,6 +12,17 @@ test("legacy hazard is upgraded to the unified model", () => {
   assert.equal(hazard.properties.confidence, "probable");
   assert.equal(hazard.properties.status, "active");
   assert.equal(hazard.properties.description, "Hotspot");
+});
+
+test("legacy Copernicus AOI coverage overlays are deprecated", () => {
+  const legacyAoi = {
+    type: "Feature",
+    properties: { source: "copernicus", extId: "ems_aoi_0_EMSR912" },
+    geometry: { type: "Polygon", coordinates: [[[-91, 14], [-90, 14], [-90, 15], [-91, 14]]] },
+  };
+  assert.equal(isDeprecatedHazardFeature(legacyAoi), true);
+  assert.equal(isDeprecatedHazardFeature(normalizeHazard(legacyAoi)), true);
+  assert.equal(isDeprecatedHazardFeature({ ...legacyAoi, properties: { source: "admin", extId: "ems_aoi_manual" } }), false);
 });
 
 test("NASA thermal hotspots are explained as satellite heat detections", () => {

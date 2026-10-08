@@ -26,3 +26,11 @@ test("provider evidence renews the 15-day hazard lifecycle", () => {
   assert.match(source, /feature\.properties\.lastSeenAt = checkedAt/);
   assert.doesNotMatch(source, /seenExtIds/, "one missing provider response must not remove a hazard before its lifecycle expires");
 });
+
+test("Copernicus activations use one event marker instead of AOI coverage polygons", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /extId: `ems_\$\{e\.code\}`/);
+  assert.match(source, /AOI extents describe mapping coverage, not the hazard footprint/);
+  assert.doesNotMatch(source, /extId: `ems_aoi_/);
+  assert.doesNotMatch(source, /parseWktPolygon/);
+});

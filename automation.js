@@ -5,6 +5,7 @@ import fs from "fs";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
+import { isDeprecatedHazardFeature } from "./lib/domain.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,18 +38,6 @@ function timestampOf(value) {
 function isoTimestamp(value, fallback = Date.now()) {
   const timestamp = timestampOf(value);
   return new Date(Number.isFinite(timestamp) ? timestamp : fallback).toISOString();
-}
-
-function parseWktPolygon(value) {
-  const match = String(value || "").match(/POLYGON\s*\(\(([\s\S]*)\)\)\s*$/i);
-  if (!match) return null;
-  const rings = match[1].split(/\)\s*,\s*\(/).map((ring) =>
-    ring.split(/\s*,\s*/).map((pair) => pair.trim().split(/\s+/).slice(0, 2).map(Number))
-  );
-  if (!rings.length || rings.some((ring) => ring.length < 4 || ring.some((point) => point.length !== 2 || !point.every(Number.isFinite)))) {
-    return null;
-  }
-  return rings;
 }
 
 function isRecentProviderFeature(feature, now = Date.now()) {
@@ -346,7 +335,7 @@ async function fetchCopernicusEMS() {
           : categorySlug.includes("earthquake") ? "earthquake"
           : "other";
 
-        // Activation details include the mapped areas of interest.
+        let mappedAreaSummary = "";
         try {
            const actDetailUrl = `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${e.code}`;
            const actResp = await fetchOfficial(actDetailUrl);
@@ -354,44 +343,17 @@ async function fetchCopernicusEMS() {
               const actData = await actResp.json();
               const activationInfo = actData.results?.[0];
               if (activationInfo && activationInfo.aois && activationInfo.aois.length > 0) {
-                 const featureCountBeforeAois = features.length;
-                 for (const aoi of activationInfo.aois) {
-                    // AOI extents are WKT polygons.
-                    if (aoi.extent) {
-                       const rings = parseWktPolygon(aoi.extent);
-                       if (rings) {
-                          const activationAt = isoTimestamp(e.activationTime);
-                          features.push({
-                             type: "Feature",
-                             geometry: { type: "Polygon", coordinates: rings }, 
-                             properties: {
-                                hazard: hazard,
-                                severity: "high",
-                                confidence: "confirmed",
-                                title: e.name || `Copernicus EMS activation ${e.code}`,
-                                notes: `Copernicus EMS Layer: ${aoi.name} (AOI ${aoi.number}). Event: ${e.name} (${e.code}).`,
-                                automated: true,
-                                source: "copernicus",
-                                sourceType: "official emergency mapping activation",
-                                sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
-                                extId: `ems_aoi_${aoi.id || aoi.number}_${e.code}`,
-                                detectedAt: activationAt,
-                                lastUpdatedAt: activationAt,
-                                createdAt: activationAt
-                             }
-                          });
-                       }
-                    }
-                 }
-                 // Prefer mapped polygons over the less precise centroid.
-                 if (features.length > featureCountBeforeAois) continue;
+                 const areaNames = [...new Set(activationInfo.aois.map((aoi) => String(aoi.name || "").trim()).filter(Boolean))];
+                 const areaLabel = areaNames.slice(0, 3).join(", ");
+                 mappedAreaSummary = ` Copernicus mapped ${activationInfo.aois.length} area${activationInfo.aois.length === 1 ? "" : "s"}${areaLabel ? ` (${areaLabel})` : ""}.`;
               }
            }
         } catch (aoiErr) {
            console.warn(`[Automation] AOIs fetch skip for ${e.code}:`, aoiErr.message);
         }
 
-        // Use the centroid when no valid AOI polygon is available.
+        // AOI extents describe mapping coverage, not the hazard footprint. Use one
+        // event marker so the map does not imply that the entire AOI is affected.
         if (centroidMatch) {
            const activationAt = isoTimestamp(e.activationTime);
            features.push({
@@ -402,12 +364,13 @@ async function fetchCopernicusEMS() {
                  severity: "high",
                  confidence: "confirmed",
                  title: e.name || `Copernicus EMS activation ${e.code}`,
-                 notes: `Copernicus EMS Deployment: ${e.name} (${e.code}). ${e.search_snippet?.substring(0, 150)}...`,
+                 notes: `Copernicus EMS activation: ${e.name} (${e.code}).${mappedAreaSummary}`,
                  automated: true,
                  source: "copernicus",
                  sourceType: "official emergency mapping activation",
                  sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
                  extId: `ems_${e.code}`,
+                 locationEstimated: true,
                  detectedAt: activationAt,
                  lastUpdatedAt: activationAt,
                  createdAt: activationAt
@@ -605,7 +568,9 @@ async function refreshAutomatedHazards() {
     }
 
     const initialCount = hazards.features.length;
-    hazards.features = hazards.features.filter((feature) => isRecentProviderFeature(feature));
+    hazards.features = hazards.features.filter((feature) =>
+      !isDeprecatedHazardFeature(feature) && isRecentProviderFeature(feature)
+    );
     const removedCount = initialCount - hazards.features.length;
 
     if (addedCount > 0 || updatedCount > 0 || removedCount > 0) {

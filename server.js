@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import fs from "fs";
 import multer from "multer";
-import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isHazardCurrent, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
+import { HAZARD_PUBLIC_LIFETIME_MS, applyReportAiEvaluation, compactHazardForPublic, groupNearbyPointHazards, isDeprecatedHazardFeature, isHazardCurrent, isReportPublic, normalizeCollection, normalizeHazard, normalizeReport, reconcileReportVisibility, sanitizeReportForPublic } from "./lib/domain.js";
 import { readProviderStatus } from "./lib/provider-status.js";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { evaluateReportWithAI } from "./lib/report-moderator-ai.js";
@@ -308,9 +308,14 @@ function purgeExpiredAutomatedHazards(now = Date.now()) {
   const collection = getHazards();
   const features = Array.isArray(collection.features) ? collection.features : [];
   const expired = [];
+  const deprecated = [];
   const retained = [];
   for (const feature of features) {
     try {
+      if (isDeprecatedHazardFeature(feature)) {
+        deprecated.push(feature);
+        continue;
+      }
       const normalized = normalizeHazard(feature);
       const properties = normalized.properties;
       const source = String(properties.source || "").toLowerCase();
@@ -326,11 +331,12 @@ function purgeExpiredAutomatedHazards(now = Date.now()) {
       retained.push(feature);
     }
   }
-  if (expired.length) {
+  if (expired.length || deprecated.length) {
     saveHazards({ ...collection, features: retained });
-    console.log(`[HAZARDS] Removed ${expired.length} automatically added hazards without renewed evidence for 15 days.`);
+    if (expired.length) console.log(`[HAZARDS] Removed ${expired.length} automatically added hazards without renewed evidence for 15 days.`);
+    if (deprecated.length) console.log(`[HAZARDS] Removed ${deprecated.length} deprecated Copernicus AOI overlays.`);
   }
-  return { removedHazards: expired.length };
+  return { removedHazards: expired.length + deprecated.length };
 }
 
 const AUTH_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -1187,7 +1193,8 @@ app.get("/hazards/data", (req, res) => {
     const normalized = {
       ...allHazards,
       features: allHazards.features.filter((feature) =>
-        isHazardCurrent(feature, now)
+        !isDeprecatedHazardFeature(feature)
+        && isHazardCurrent(feature, now)
         && (includeRecent || feature.properties.status === "active")
         && (!requestedTypes.size || requestedTypes.has(feature.properties.hazard))
         && featureInHazardRegion(feature, viewportBbox)
