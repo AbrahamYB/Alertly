@@ -1,6 +1,6 @@
-import { fork } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { fork } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,41 +12,40 @@ let restartTimer = null;
 let shuttingDown = false;
 
 function startAutomation() {
-    if (currentChild || shuttingDown) return currentChild;
-    console.log('[Master] Starting background automation process...');
-    currentChild = fork(automationPath);
+  if (currentChild || shuttingDown) return currentChild;
+  console.log("[Master] Starting background automation process...");
+  currentChild = fork(automationPath);
 
-    currentChild.on('exit', (code) => {
-        currentChild = null;
-        if (shuttingDown) return;
-        console.log(`[Master] Automation process exited with code ${code}. Restarting in 10s...`);
-        restartTimer = setTimeout(() => {
-            restartTimer = null;
-            startAutomation();
-        }, 10000);
-    });
+  currentChild.on("exit", (code) => {
+    currentChild = null;
+    if (shuttingDown) return;
+    console.log(`[Master] Automation process exited with code ${code}. Restarting in 10s...`);
+    restartTimer = setTimeout(() => {
+      restartTimer = null;
+      startAutomation();
+    }, 10000);
+  });
 
-    currentChild.on('error', (err) => {
-        console.error('[Master] Automation process error:', err);
-    });
-    return currentChild;
+  currentChild.on("error", (err) => {
+    console.error("[Master] Automation process error:", err);
+  });
+  return currentChild;
 }
 
 function stopAutomation() {
-    shuttingDown = true;
-    if (restartTimer) {
-        clearTimeout(restartTimer);
-        restartTimer = null;
-    }
-    if (currentChild) {
-        currentChild.kill('SIGTERM');
-        currentChild = null;
-    }
+  shuttingDown = true;
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+  if (currentChild) {
+    currentChild.kill("SIGTERM");
+    currentChild = null;
+  }
 }
 
-// If this file is run directly, start the automation
 if (process.argv[1] === __filename) {
-    startAutomation();
+  startAutomation();
 }
 
 export { startAutomation, stopAutomation };

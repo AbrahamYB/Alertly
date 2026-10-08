@@ -1534,11 +1534,9 @@ function styleFor(hazard, severity) {
       if (e.key === "Enter") sendMessage();
     });
 
-    // ── Chat persistence (localStorage, 6-hour TTL per session) ──────────────
     const CHAT_LS_KEY = "alertly_chat_v1";
     const CHAT_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-    /** Serialise chat-body to a plain array of {role, html} objects */
     function serializeChat() {
       const msgs = chatBody.querySelectorAll(".message");
       return Array.from(msgs).map(el => ({
@@ -1547,7 +1545,6 @@ function styleFor(hazard, severity) {
       }));
     }
 
-    /** Restore messages from saved data */
     function restoreChat(messages) {
       chatBody.innerHTML = "";
       messages.forEach(({ role, html }) => {
@@ -1558,7 +1555,6 @@ function styleFor(hazard, severity) {
       });
     }
 
-    /** Persist current chat to localStorage */
     function persistChat() {
       try {
         const messages = serializeChat();
@@ -1570,7 +1566,6 @@ function styleFor(hazard, severity) {
       } catch (_) {}
     }
 
-    /** Load chat from localStorage if within TTL */
     function loadPersistedChat() {
       try {
         const raw = localStorage.getItem(CHAT_LS_KEY);
@@ -1586,19 +1581,15 @@ function styleFor(hazard, severity) {
       } catch (_) {}
     }
 
-    // Autosave after every message is fully rendered (observe DOM mutations in chat-body)
     const _chatObserver = new MutationObserver(() => persistChat());
     _chatObserver.observe(chatBody, { childList: true, subtree: true, characterData: true });
 
-    // Prune expired saves on load
     loadPersistedChat();
 
-    // Also purge on beforeunload if empty
     window.addEventListener("beforeunload", () => {
       if (!chatBody.querySelector(".message")) localStorage.removeItem(CHAT_LS_KEY);
     });
 
-    // ── Save to device ───────────────────────────────────────────────────────
     function saveChatToDevice() {
       const msgs = chatBody.querySelectorAll(".message");
       if (!msgs.length) {
@@ -1614,7 +1605,6 @@ function styleFor(hazard, severity) {
 
       msgs.forEach(el => {
         const role = el.classList.contains("user") ? "You" : "Alertly";
-        // Strip HTML tags for plain-text export
         const tmp = document.createElement("div");
         tmp.innerHTML = el.innerHTML;
         const text = (tmp.innerText || tmp.textContent || "").trim();

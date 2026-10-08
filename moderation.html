@@ -1183,7 +1183,6 @@
 
     const COLOR_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.color]));
 
-    // DOM Elements
     const elements = {
       searchFilter: document.getElementById("searchFilter"),
       statusFilter: document.getElementById("statusFilter"),
@@ -1238,12 +1237,10 @@
       detailExpandTab: document.getElementById("detailExpandTab")
     };
 
-    // Populate category dropdowns
     CATEGORIES.forEach(cat => {
       elements.editType.add(new Option(cat.label, cat.id));
     });
 
-    // Initialize Map
     const map = L.map("map", { zoomControl: true }).setView([15.5, -88], 7);
     L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
       attribution: "&copy; Esri"
@@ -1263,7 +1260,6 @@
     let editCoords = null;
     let toastTimer = null;
 
-    // Horizontal Resizing & Auto-Collapse Management
     const QUEUE_WIDTH_KEY = "alertly_mod_queue_width";
     const DETAIL_WIDTH_KEY = "alertly_mod_detail_width";
 
@@ -1318,7 +1314,6 @@
         if (savedDetailW) setDetailWidth(parseInt(savedDetailW, 10));
       } catch {}
 
-      // Left Resizer (Queue Panel) - Horizontal Only
       let isDraggingQueue = false;
       let queueStartX = 0;
       let queueStartW = 0;
@@ -1363,7 +1358,6 @@
         });
       }
 
-      // Right Resizer (Detail Panel) - Horizontal Only
       let isDraggingDetail = false;
       let detailStartX = 0;
       let detailStartW = 0;
@@ -1408,7 +1402,6 @@
         });
       }
 
-      // Header & Floating Toggle Buttons
       elements.queueCollapseBtn?.addEventListener("click", () => collapseQueue(true, true));
       elements.queueExpandTab?.addEventListener("click", () => collapseQueue(false, true));
       elements.detailCollapseBtn?.addEventListener("click", () => collapseDetail(true, true));
@@ -1460,7 +1453,7 @@
       const modStatus = getModerationStatus(report);
 
       let layer;
-      // Only render full polygon geometry if this specific report is selected
+      // Draw full geometry only for the selected report.
       if (isSelected && geometry.type === "Polygon") {
         const latLngs = (geometry.coordinates[0] || []).map(([lng, lat]) => [lat, lng]);
         layer = L.polygon(latLngs, {
@@ -1477,7 +1470,7 @@
           opacity: 0.9
         });
       } else {
-        // Compact marker for unselected reports — prevents map clutter
+        // Use compact markers for unselected reports.
         const lat = Number.isFinite(report.lat) ? report.lat : (geometry.coordinates?.[1] || 15);
         const lng = Number.isFinite(report.lng) ? report.lng : (geometry.coordinates?.[0] || -88);
         layer = L.circleMarker([lat, lng], {
@@ -1541,7 +1534,6 @@
         elements.queueExpandBadge.textContent = filteredReports.length;
       }
 
-      // Calculate counts for each category
       const counts = { all: filteredReports.length };
       CATEGORIES.forEach(cat => { counts[cat.id] = 0; });
       filteredReports.forEach(report => {
@@ -1550,7 +1542,6 @@
         else counts["other"]++;
       });
 
-      // Render vertical sideways categories sidebar
       const allCategoryTabs = [
         { id: "all", label: "🌐 All types", color: "#818cf8" },
         ...CATEGORIES
@@ -1575,7 +1566,6 @@
         };
       });
 
-      // Filter displayed reports by selected category
       const displayedReports = selectedCategory === "all"
         ? filteredReports
         : filteredReports.filter(r => normalizeCategory(r.type) === selectedCategory);
@@ -1685,7 +1675,6 @@
       elements.editSeverity.value = selectedReport.severity || "unknown";
       elements.editStatus.value = incStatus;
 
-      // Render Attached Images
       const images = Array.isArray(selectedReport.images) ? selectedReport.images : [];
       if (images.length) {
         elements.imageSection.hidden = false;
@@ -1702,7 +1691,6 @@
         elements.imageGallery.innerHTML = "";
       }
 
-      // Render AI Evaluation Details
       const ai = selectedReport.aiEvaluation;
       if (ai && ai.verdict && ai.verdict !== "unverified") {
         elements.aiVerdictBadge.textContent = `${ai.verdict.replace("_", " ").toUpperCase()} · ${Math.round(Number(ai.confidence) || 0)}%`;
@@ -1714,7 +1702,6 @@
         elements.aiReasonText.textContent = "Not yet evaluated by AI.";
       }
 
-      // Render removal requests
       elements.requestList.innerHTML = selectedReport.removalRequests?.length
         ? selectedReport.removalRequests.map(req => {
             const status = req.status || "pending";
@@ -1734,7 +1721,6 @@
           }).join("")
         : '<div class="count">No removal requests.</div>';
 
-      // Render audit log
       elements.auditList.innerHTML = selectedReport.auditLog?.length
         ? [...selectedReport.auditLog].reverse().map(log => `
             <div class="audit">
@@ -1908,7 +1894,6 @@
     }
     window.resolveRemovalRequest = resolveRemovalRequest;
 
-    // Mapped Area Editing
     function beginAreaEdit() {
       const ring = selectedReport?.geometry?.type === "Polygon" ? selectedReport.geometry.coordinates[0] : null;
       if (!ring?.length) {
@@ -1978,7 +1963,6 @@
       }).then(cancelAreaEdit);
     }
 
-    // Event Bindings
     map.on("click", e => {
       if (!editCoords) return;
       editCoords.push([e.latlng.lng, e.latlng.lat]);
@@ -2048,7 +2032,7 @@
       });
     }
 
-    // Data Loading with Signature Diffing (Optimizes performance & battery for low-data devices)
+    // Skip rendering when polling returns the same data.
     let lastReportsSignature = "";
     function getReportsSignature(list) {
       return (list || []).length + ":" + (list || []).map(r => `${r.id}:${r.updatedAt || r.createdAt}:${r.status}:${r.verified}:${r.removalRequests?.length || 0}`).join(";");

@@ -29,7 +29,7 @@
   - Zero-dependency file persistence (`data/reports.json` and `hazards.geojson`) with atomic cross-platform file replacement. Backup, restore, and demo seed commands honor deployment storage paths.
   - Automated database backup: `npm run backup` (creates timestamped snapshot in `backups/`).
   - Automated database restore: `npm run restore [file]` (safely restores from backup).
-  - One-command clean demo seeding: `npm run seed:demo` (backs up current data and seeds pristine, believable demo datasets).
+  - One-command demo seeding: `npm run seed:demo` backs up current data before writing the demo dataset.
   - Auto-initialization on fresh starts if data files are missing or empty.
 - **Security & Client Data Isolation**:
   - Zero sensitive server data sent to public browsers: `sanitizeReportForPublic` strips internal audit logs, removal requests, moderator notes, and submitter IP addresses before public response.
@@ -298,6 +298,7 @@ npm test
 
 ## 10. RECENT CHANGE LOG
 
+- **Latest — Source Style Cleanup**: Removed decorative and generated-looking comments, emoji debug output, stale test model names, and unused declarations while preserving user-facing hazard icons and labels. Normalized the automation supervisor's formatting and stopped sending placeholder image data when an attachment cannot be read.
 - **Latest — Unified Public/Moderation Visibility & Fixed Hazard Schedule**: Community reports now use one server-side visibility decision everywhere. AI-plausible or moderator-approved reports are public; unverified, suspicious, likely-false, rejected, and removed reports stay moderation-only. Approved community reports are merged into the main map hazard feed, already-open report maps replace stale markers after moderator edits, and public query parameters cannot reveal hidden reports. Automated hazard refreshes now run at fixed `00:00` and `12:00` times in `America/Guatemala` instead of drifting twelve hours from process startup.
 - **Latest — Full Reliability Audit**: Connected RSOE EDIS and Copernicus to the real refresh cycle; made provider failure/empty-result handling safe; aligned provider staleness with the twice-daily schedule; corrected upload cleanup and the 50MB error; made backup/restore/seed deployment-path aware and atomic; removed dead aliases, IPC, and legacy seed fields; added clean worker shutdown/restart behavior; restored quarantined media after a plausible staff re-check; narrowed proxy trust; and expanded coverage to 61 passing checks.
 
@@ -310,12 +311,12 @@ npm test
 7. **Documentation Consolidation**: Consolidated `CHANGES_SUMMARY.md` into `HANDOFF.md` and preserved `CODEBASE_MAP.md` for jCodeMunch MCP.
 8. **UI & Data Synchronization Overhaul**: Fixed stats, counts, and category normalization inconsistencies across `moderation.html`, `hazard-admin.html`, and `index.html`. Added one-click moderator action controls (Approve, Reject, Pending, Resolve) and live AI/community flag counters.
 9. **Eliminated Parasitic Ghost Mappings & Added Anti-Caching**:
-   - Eliminated parasitic overlapping background polygons on the moderation map: background queue items now render solely as clean, compact point pins, and full polygon geometries ONLY render for the actively selected report.
+   - Removed overlapping background polygons from the moderation map. Unselected queue items use point markers, while the selected report renders its full geometry.
    - Enforced strict HTTP `Cache-Control: no-store, no-cache, must-revalidate` across all Express API routes (`/api/moderation/reports`, `/api/reports/data`, `/hazards/data`, `/api/admin/hazards`) and timestamped client requests (`?_t=...`) to stop stale browser caching.
    - Fixed topbar flex styling so navigation buttons sit on a single line without wrapping.
 10. **Moderation Queue & Category Synchronization**:
     - Synced `CATEGORIES` in `moderation.html` to exactly match the 6 community categories on `report.html` (`🔥 Fire`, `🌊 Flood`, `🌋 Volcanic Activity`, `⛰️ Landslide`, `🫨 Earthquake`, `❓ Other`).
-    - Replaced bulky horizontal accordion list with a sleek vertical sideways category rail (`.cat-sidebar`) on the left side of the Review Queue pane.
+    - Replaced the horizontal accordion with a vertical category rail (`.cat-sidebar`) beside the review queue.
     - Displays `🌐 All types` and all 6 categories permanently with live item count badges (`.cat-badge`) and active state switching.
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.
     - Verified permanent erasure on deletion (`DELETE /api/moderation/reports/:id`) removing records from `data/reports.json` and unlinking attachments from `uploads/`.

@@ -35,7 +35,7 @@ const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY || "loopback");
 app.disable("x-powered-by");
 
-// Enable HTTP compression for HTML, JSON, JS, CSS (skips SSE streams & no-transform)
+// Compress regular responses but leave streams and no-transform responses alone.
 app.use(compression({
   filter: (req, res) => {
     if (req.headers["x-no-compression"]) return false;
@@ -140,7 +140,7 @@ app.use("/uploads", express.static(UPLOADS_DIR, {
     res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
   }
 }));
-// Initialize hazards.geojson if it doesn't exist or is empty
+// Create the hazard collection on first start.
 if (!fs.existsSync(HAZARDS_FILE) && HAZARDS_FILE !== BUNDLED_HAZARDS_FILE && fs.existsSync(BUNDLED_HAZARDS_FILE)) {
   fs.copyFileSync(BUNDLED_HAZARDS_FILE, HAZARDS_FILE);
 }
@@ -385,7 +385,6 @@ function isLoopbackRequest(req) {
   return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
 }
 
-// Rate Limiters & Daily Quotas
 const publishLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   maxRequests: 5,
@@ -417,10 +416,9 @@ const staffLoginLimiter = createRateLimiter({
 
 const dailyQuotaTracker = createDailyQuotaTracker(15);
 
-// Alertly AI identity + session memory
 const ASSISTANT_NAME = "Alertly AI";
 
-// In-memory session store (clears on server restart)
+// Chat sessions are intentionally in memory and reset with the process.
 const sessions = new Map(); // sid -> { history: [{role, content}], lastSeen: number }
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 6; // 6h idle eviction
@@ -454,7 +452,6 @@ function normalizeAssistantReply(value) {
   return repeated ? repeated[1].trim() : reply;
 }
 
-// periodic cleanup
 setInterval(() => {
   const now = Date.now();
   for (const [sid, s] of sessions.entries()) {
@@ -467,7 +464,7 @@ function getOrCreateSession(req, res) {
 
   if (!sid || typeof sid !== "string" || sid.length < 10) {
     sid = crypto.randomUUID();
-    // Session cookie (no expires) -> usually cleared when browser closes
+    // Session cookies normally expire when the browser closes.
     res.cookie("alertly_sid", sid, {
       httpOnly: true,
       sameSite: "lax",
@@ -1238,7 +1235,7 @@ app.delete("/api/admin/hazards/:id", requireAdmin, (req, res) => {
   res.json({ ok: true, removedId: removed.id });
 });
 
-// Central error handling middleware - prevents leaking internal stack traces
+// Return client-safe errors without exposing stack traces.
 app.use((err, req, res, _next) => {
   if (err instanceof multer.MulterError) {
     cleanupFailedReportMedia(req.files || []);

@@ -46,7 +46,6 @@ export function performRestore(specificFile, options = {}) {
     throw new Error("Invalid backup format: expected a reports array and hazard FeatureCollection.");
   }
 
-  // Atomically write restored files
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(path.dirname(hazardsFile), { recursive: true });
 
@@ -63,7 +62,6 @@ export function performRestore(specificFile, options = {}) {
   return { success: true, reports: data.reports.length, hazards: data.hazards.features?.length || 0 };
 }
 
-// If invoked directly from CLI
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const targetFile = process.argv[2];
   try {

@@ -64,7 +64,7 @@ test("evaluateReportWithAI uses vision model when images are present", async () 
     text: "Smoke coming from the ridge.",
     lng: -88.2,
     lat: 15.6,
-    images: [{ url: "/uploads/nonexistent.jpg" }]
+    images: [{ url: "data:image/jpeg;base64,/9j/2Q==" }]
   };
 
   const mockResponse = {
@@ -83,14 +83,14 @@ test("evaluateReportWithAI uses vision model when images are present", async () 
 
   const config = reportAiConfig({
     REPORT_AI_API_KEY: "test-vision-key",
-    REPORT_AI_VISION_MODEL: "llama-3.2-11b-vision-preview"
+    REPORT_AI_VISION_MODEL: "vision-test-model"
   });
 
   const result = await evaluateReportWithAI(report, {
     config,
     request: async (_url, options) => {
       const body = JSON.parse(options.body);
-      assert.equal(body.model, "llama-3.2-11b-vision-preview");
+      assert.equal(body.model, "vision-test-model");
       return { ok: true, json: async () => mockResponse };
     }
   });

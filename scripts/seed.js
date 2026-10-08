@@ -17,9 +17,9 @@ fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
 console.log("[SEED] 1. Creating backup of current database state...");
 performBackup();
 
-console.log("[SEED] 2. Seeding clean, high-credibility demo datasets...");
+console.log("[SEED] 2. Writing demo datasets...");
 
-// Pristine demo community reports across key hazard categories
+// Demo community reports across key hazard categories.
 const DEMO_REPORTS = [
   {
     id: "rep_demo_fire_tegucigalpa",
@@ -139,7 +139,7 @@ const DEMO_REPORTS = [
   }
 ];
 
-// Clean, believable official and verified hazards
+// Demo official and verified hazards.
 const DEMO_HAZARDS = {
   type: "FeatureCollection",
   features: [
@@ -212,7 +212,7 @@ const DEMO_HAZARDS = {
   ]
 };
 
-// Write clean seed data atomically
+// Replace both data files only after their temporary files are complete.
 const tempReports = `${REPORTS_FILE}.${process.pid}.tmp`;
 fs.writeFileSync(tempReports, JSON.stringify(DEMO_REPORTS, null, 2) + "\n");
 replaceFileSync(tempReports, REPORTS_FILE);

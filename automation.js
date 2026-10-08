@@ -76,7 +76,7 @@ function getHazards() {
 function saveHazards(data) {
   const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
-    // Track specific sync metadata in root to show in UI
+    // Keep collection-level sync metadata for the status API.
     data.lastUpdated = new Date().toISOString();
     data.status = "Monitoring";
 
@@ -149,7 +149,7 @@ async function fetchUSGSEarthquakes() {
   }
 }
 
-/**  NASA FIRMS (VIIRS 24H ACTIVE FIRES) */
+// NASA FIRMS VIIRS active fires from the last 24 hours.
 async function fetchNASAFires() {
   const apiKey = process.env.FIRMS_MAP_KEY;
   const sources = String(process.env.FIRMS_SOURCES || "VIIRS_NOAA20_NRT,VIIRS_NOAA21_NRT")
@@ -207,9 +207,7 @@ async function fetchNASAFires() {
   }
 }
 
-/**  NASA EONET (Earth Observatory Natural Event Tracker)
- * Tracks MAJOR global events: Storms, Volcanoes, Floods, etc.
- */
+// NASA EONET open natural events.
 async function fetchNASAEonet() {
   const url = `https://eonet.gsfc.nasa.gov/api/v3/events?bbox=${BBOX[0]},${BBOX[3]},${BBOX[2]},${BBOX[1]}&status=open&days=30&limit=100`;
   try {
@@ -217,7 +215,7 @@ async function fetchNASAEonet() {
     const data = await resp.json();
     const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
     return (data.events || []).map(e => {
-      // EONET usually provides the latest geometry point/polygon
+      // EONET appends geometries over time; the last entry is the current one.
       const latestGeo = e.geometry[e.geometry.length - 1];
       const eventTimestamp = new Date(latestGeo?.date || 0).getTime();
       if (!Number.isFinite(eventTimestamp) || eventTimestamp < cutoff) return null;
@@ -259,7 +257,7 @@ async function fetchNASAEonet() {
   }
 }
 
-/**  RSOE EDIS (Emergency and Disaster Information Service) */
+// RSOE EDIS emergency events.
 async function fetchRSOEEDIS() {
   const url = `https://rsoe-edis.org/gateway/webapi/events/cluster?zoom=3`;
   try {
@@ -323,7 +321,7 @@ async function fetchRSOEEDIS() {
   }
 }
 
-/**  Copernicus EMS (Rapid Mapping Activations & AOI Polygons) */
+// Copernicus EMS rapid-mapping activations and AOI polygons.
 async function fetchCopernicusEMS() {
   const listUrl = `https://mapping.emergency.copernicus.eu/activations/api/activations/?limit=50`; 
   try {
@@ -333,7 +331,7 @@ async function fetchCopernicusEMS() {
 
      const features = [];
      for (const e of data.results) {
-        // Parse Centroid WKT
+        // Activations expose their centroid as WKT.
         const centroidMatch = e.centroid?.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i);
         let coords = [0, 0];
         if (centroidMatch) {
@@ -352,7 +350,7 @@ async function fetchCopernicusEMS() {
           : categorySlug.includes("earthquake") ? "earthquake"
           : "other";
 
-        // Fetch Activation Details (which includes AOI Polygons)
+        // Activation details include the mapped areas of interest.
         try {
            const actDetailUrl = `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${e.code}`;
            const actResp = await fetchOfficial(actDetailUrl);
@@ -362,7 +360,7 @@ async function fetchCopernicusEMS() {
               if (activationInfo && activationInfo.aois && activationInfo.aois.length > 0) {
                  const featureCountBeforeAois = features.length;
                  for (const aoi of activationInfo.aois) {
-                    // Copernicus AOIs use WKT "POLYGON ((...))" in the 'extent' field
+                    // AOI extents are WKT polygons.
                     if (aoi.extent) {
                        const rings = parseWktPolygon(aoi.extent);
                        if (rings) {
@@ -389,7 +387,7 @@ async function fetchCopernicusEMS() {
                        }
                     }
                  }
-                 // If we successfully added AOI polygons, we skip adding the centroid fallback
+                 // Prefer mapped polygons over the less precise centroid.
                  if (features.length > featureCountBeforeAois) continue;
               }
            }
@@ -397,7 +395,7 @@ async function fetchCopernicusEMS() {
            console.warn(`[Automation] AOIs fetch skip for ${e.code}:`, aoiErr.message);
         }
 
-        // Fallback to point centroid if AOI details weren't available
+        // Use the centroid when no valid AOI polygon is available.
         if (centroidMatch) {
            const activationAt = isoTimestamp(e.activationTime);
            features.push({
@@ -486,7 +484,6 @@ async function refreshAutomatedHazards() {
       }
     };
 
-    // 1.  FETCH SATELLITE DATA FIRST (USGS & NASA)
     console.log("[Automation] Fetching satellite earthquake data...");
     mergeProviderFeatures("usgs", "usgs", await fetchUSGSEarthquakes());
 
@@ -510,7 +507,6 @@ async function refreshAutomatedHazards() {
     console.log("[Automation] Fetching Copernicus EMS activations...");
     mergeProviderFeatures("copernicus", "copernicus", await fetchCopernicusEMS());
 
-    // 2.  FETCH GDACS (EXISTING)
     try {
       const gdacsUrl = "https://www.gdacs.org/xml/rss.xml";
       const resp = await fetchOfficial(gdacsUrl, { headers: { Accept: "application/xml, text/xml" } });
@@ -655,7 +651,7 @@ function scheduleNextHazardRefresh(from = new Date()) {
     hazardCheckTimeZone: REFRESH_TIMEZONE,
   });
   console.log(`[Automation] Next combined provider refresh at ${nextRun.toISOString()} (${REFRESH_TIMES.join(" and ")} ${REFRESH_TIMEZONE}).`);
-  const timer = setTimeout(async () => {
+  setTimeout(async () => {
     await refreshAutomatedHazards();
     scheduleNextHazardRefresh(new Date(Date.now() + 60_000));
   }, delay);

@@ -2784,7 +2784,6 @@ let pendingReport = null, pendingMarker = null;
         const result = await resp.json();
 
         if (result.success) {
-          console.log("💾 Report and Images saved to server.");
           const savedReport = result.report || {
             ...reportData,
             id: result.id || reportData.id,

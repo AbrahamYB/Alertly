@@ -58,7 +58,6 @@ export function performBackup(options = {}) {
   return targetPath;
 }
 
-// If invoked directly from CLI
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   performBackup();
 }
