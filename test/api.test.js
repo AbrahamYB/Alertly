@@ -74,6 +74,19 @@ test("POST /chat rejects obvious off-topic use without consuming AI quota", asyn
   assert.equal(after.used, before.used);
 });
 
+test("POST /chat handles greetings locally with an Alertly-focused answer", async () => {
+  const res = await fetch(`${BASE_URL}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ message: "hello", responseMode: "json" }),
+  });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.handledLocally, true);
+  assert.equal(data.scopeRestricted, false);
+  assert.match(data.reply, /environmental hazards/);
+});
+
 test("Moderation data is unavailable without staff authentication", async () => {
   const res = await fetch(`${BASE_URL}/api/moderation/reports`);
   assert.notEqual(res.status, 200);

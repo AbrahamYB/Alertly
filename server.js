@@ -1007,10 +1007,11 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
 
   const clientHistory = normalizeClientChatHistory(req.body?.history);
   const scope = chatScopeDecision(message, clientHistory);
-  if (!scope.allowed) {
+  if (!scope.allowed || scope.directReply) {
     const payload = {
-      reply: OUT_OF_SCOPE_REPLY,
-      scopeRestricted: true,
+      reply: scope.directReply || OUT_OF_SCOPE_REPLY,
+      scopeRestricted: !scope.allowed,
+      handledLocally: true,
       quotaRemaining: quota.remaining,
       quotaUsed: quota.used,
       quotaLimit: quota.limit,
@@ -1018,7 +1019,7 @@ app.post("/chat", chatLimiterUnlessStaff, async (req, res) => {
     };
     if (wantsJson) return res.json(payload);
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
-    res.write('data: ' + JSON.stringify({ chunk: payload.reply, scopeRestricted: true }) + '\n\n');
+    res.write('data: ' + JSON.stringify({ chunk: payload.reply, scopeRestricted: payload.scopeRestricted, handledLocally: true }) + '\n\n');
     res.write('data: ' + JSON.stringify({ done: true, quotaRemaining: quota.remaining, quotaUnlimited: staffHasUnlimitedChat }) + '\n\n');
     return res.end();
   }
