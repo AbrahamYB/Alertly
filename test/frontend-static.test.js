@@ -24,6 +24,16 @@ test("all application pages contain syntactically valid inline JavaScript", () =
   }
 });
 
+test("every static element lookup points to an element that exists", () => {
+  for (const filename of ["index.html", "report.html", "moderation.html", "hazard-admin.html", "staff.html"]) {
+    const html = readPage(filename);
+    const declaredIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map(match => match[1]));
+    const referencedIds = [...html.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map(match => match[1]);
+    const missingIds = [...new Set(referencedIds.filter(id => !declaredIds.has(id)))];
+    assert.deepEqual(missingIds, [], `${filename} references missing element IDs: ${missingIds.join(", ")}`);
+  }
+});
+
 test("moderation page retains every protected workflow connection", () => {
   const html = readPage("moderation.html");
   for (const required of [

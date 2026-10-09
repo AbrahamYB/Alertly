@@ -320,7 +320,7 @@ npm test
     - All public, report, moderation, and hazard administration surfaces now use the shared taxonomy in `hazard-ui.js`; lightning and thunder remain storm subtypes, while earthquakes always use the seismic category icon.
     - Provider subtype text is retained as `hazardDetail`, so lightning and thunderstorms render as `⛈️` inside the Storms layer instead of losing their subtype during server normalization. Community-report and moderation point markers use the same hazard-specific design rather than the legacy generic pin or dot.
     - Replaced the horizontal accordion with a vertical category rail (`.cat-sidebar`) beside the review queue.
-    - Displays `🌐 All types` and all 6 categories permanently with live item count badges (`.cat-badge`) and active state switching.
+    - Displays `🌐 All types` and all shared hazard categories permanently with live item count badges (`.cat-badge`) and active state switching.
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.
     - Verified permanent erasure on deletion (`DELETE /api/moderation/reports/:id`) removing records from `data/reports.json` and unlinking attachments from `uploads/`.
 11. **Alertly Antigravity Checklist Execution (Phases 1–10 Complete)**:
