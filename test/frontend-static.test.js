@@ -63,4 +63,17 @@ test("every hazard surface uses the shared icon taxonomy", () => {
   assert.equal(taxonomy.iconFor("tornado"), "🌪️");
   assert.equal(taxonomy.normalize("storm surge"), "flood");
   assert.equal(new Set(taxonomy.categories.map(category => category.icon)).size, taxonomy.categories.length);
+
+  const home = readPage("index.html");
+  assert.ok(home.includes('feature.properties.hazardDetail || ""'));
+  assert.ok(home.includes('className: "hazard-symbol-wrap"'));
+
+  const reports = readPage("report.html");
+  assert.ok(reports.includes("const categoryId = AlertlyHazards.normalize(data.type)"));
+  assert.ok(reports.includes('className: "hazard-symbol-wrap"'));
+  assert.ok(!reports.includes('const typeColors = { "🔥"'));
+
+  const moderation = readPage("moderation.html");
+  assert.ok(moderation.includes("const icon = AlertlyHazards.iconFor(cat"));
+  assert.ok(moderation.includes('className: "hazard-symbol-wrap"'));
 });

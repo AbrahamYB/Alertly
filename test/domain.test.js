@@ -43,6 +43,8 @@ test("lightning and thunder reports use the existing storm category", () => {
       geometry: { type: "Point", coordinates: [-87, 15] },
     });
     assert.equal(normalized.properties.hazard, "storm");
+    assert.equal(normalized.properties.hazardDetail, hazard);
+    assert.equal(compactHazardForPublic(normalized).properties.hazardDetail, hazard);
   }
 });
 

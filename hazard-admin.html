@@ -804,7 +804,7 @@
           title: hazard.properties.title || "",
           icon: L.divIcon({
             className: "hazard-symbol-wrap",
-            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${AlertlyHazards.iconFor(hazardType, hazard.properties.title)}</span></div>`,
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${AlertlyHazards.iconFor(hazardType, `${hazard.properties.hazardDetail || ""} ${hazard.properties.title || ""} ${hazard.properties.description || ""}`)}</span></div>`,
             iconSize: [24, 24],
             iconAnchor: [12, 12]
           })
@@ -875,7 +875,7 @@
         const cardsHtml = items.map(h => `
           <button class="hazard-card ${selectedHazard?.id === h.id ? "active" : ""}" data-id="${escapeHtml(h.id)}">
             <div class="card-row">
-              <span class="icon">${AlertlyHazards.iconFor(h.properties.hazard, h.properties.title)}</span>
+              <span class="icon">${AlertlyHazards.iconFor(h.properties.hazard, `${h.properties.hazardDetail || ""} ${h.properties.title || ""} ${h.properties.description || ""}`)}</span>
               <span class="title">${escapeHtml(h.properties.title)}</span>
             </div>
             <div class="meta">${escapeHtml(h.properties.source)} · ${new Date(h.properties.lastUpdatedAt || h.properties.detectedAt).toLocaleDateString()}</div>

@@ -1226,7 +1226,7 @@ scroll-behavior: auto !important;
             if (feature.geometry.type === "Point") {
               const [lng, lat] = feature.geometry.coordinates;
               const style = styleFor(hType, severity);
-              const hazardIcon = AlertlyHazards.iconFor(hType, `${title} ${description}`);
+              const hazardIcon = AlertlyHazards.iconFor(hType, `${feature.properties.hazardDetail || ""} ${title} ${description}`);
               layer = L.marker([lat, lng], {
                 keyboard: true,
                 riseOnHover: true,

@@ -318,6 +318,7 @@ npm test
    - Fixed topbar flex styling so navigation buttons sit on a single line without wrapping.
 10. **Moderation Queue & Category Synchronization**:
     - All public, report, moderation, and hazard administration surfaces now use the shared taxonomy in `hazard-ui.js`; lightning and thunder remain storm subtypes, while earthquakes always use the seismic category icon.
+    - Provider subtype text is retained as `hazardDetail`, so lightning and thunderstorms render as `⛈️` inside the Storms layer instead of losing their subtype during server normalization. Community-report and moderation point markers use the same hazard-specific design rather than the legacy generic pin or dot.
     - Replaced the horizontal accordion with a vertical category rail (`.cat-sidebar`) beside the review queue.
     - Displays `🌐 All types` and all 6 categories permanently with live item count badges (`.cat-badge`) and active state switching.
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.

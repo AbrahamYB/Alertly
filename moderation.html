@@ -633,6 +633,34 @@
       padding: 0 3px !important;
     }
 
+    .hazard-symbol-wrap {
+      background: transparent !important;
+      border: 0 !important;
+    }
+
+    .hazard-symbol {
+      --hazard-color: #6366f1;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(255, 255, 255, .9);
+      border-radius: 7px 7px 7px 2px;
+      background: var(--hazard-color);
+      box-shadow: 0 3px 9px rgba(0, 0, 0, .42);
+      font: 12px/1 system-ui, sans-serif;
+      transform: rotate(-8deg);
+    }
+
+    .hazard-symbol > span {
+      transform: rotate(8deg);
+    }
+
+    .hazard-symbol.selected {
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, .85), 0 4px 12px rgba(0, 0, 0, .5);
+      transform: rotate(-8deg) scale(1.18);
+    }
+
     .leaflet-control-zoom {
       border: 0 !important;
     }
@@ -1462,15 +1490,22 @@
           opacity: 0.9
         });
       } else {
-        // Use compact markers for unselected reports.
         const lat = Number.isFinite(report.lat) ? report.lat : (geometry.coordinates?.[1] || 15);
         const lng = Number.isFinite(report.lng) ? report.lng : (geometry.coordinates?.[0] || -88);
-        layer = L.circleMarker([lat, lng], {
-          color: isSelected ? "#ffffff" : color,
-          weight: isSelected ? 3 : 1.5,
-          fillColor: color,
-          fillOpacity: isSelected ? 1 : (modStatus === "rejected" ? 0.35 : 0.8),
-          radius: isSelected ? 9 : 6
+        const opacity = modStatus === "rejected" ? 0.45 : 1;
+        const icon = AlertlyHazards.iconFor(cat, `${report.type || ""} ${report.text || ""}`);
+        layer = L.marker([lat, lng], {
+          keyboard: true,
+          riseOnHover: true,
+          title: report.type || "Report",
+          alt: report.type || "Report",
+          opacity,
+          icon: L.divIcon({
+            className: "hazard-symbol-wrap",
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${icon}</span></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
         });
       }
 

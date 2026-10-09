@@ -1140,6 +1140,39 @@
       border: 3px solid #fff;
     }
 
+    .hazard-symbol-wrap {
+      background: transparent !important;
+      border: 0 !important;
+    }
+
+    .hazard-symbol {
+      --hazard-color: #6366f1;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(255, 255, 255, .92);
+      border-radius: 8px 8px 8px 2px;
+      background: var(--hazard-color);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, .42);
+      color: #fff;
+      font: 13px/1 system-ui, sans-serif;
+      transform: rotate(-8deg);
+    }
+
+    .hazard-symbol > span {
+      transform: rotate(8deg);
+    }
+
+    .hazard-symbol.pin-pop {
+      animation: hazardPinPop .4s cubic-bezier(.34, 1.56, .64, 1) both;
+    }
+
+    @keyframes hazardPinPop {
+      from { transform: rotate(-8deg) scale(0); opacity: 0; }
+      to { transform: rotate(-8deg) scale(1); opacity: 1; }
+    }
+
     .pin-pop {
       animation: pinPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
     }
@@ -2862,20 +2895,13 @@ let pendingReport = null, pendingMarker = null;
     window.requestRemoval = requestRemoval;
 
     function addReportToMap(data) {
-      const emoji = data.type.split(" ")[0], label = data.type.replace(emoji, "").trim();
+      const categoryId = AlertlyHazards.normalize(data.type);
+      const category = AlertlyHazards.byId[categoryId] || AlertlyHazards.byId.other;
+      const emoji = AlertlyHazards.iconFor(categoryId, `${data.type || ""} ${data.text || ""}`);
+      const label = category.label;
       const images = Array.isArray(data.images) ? data.images : [];
-
-      const typeGradients = {
-        "🔥": "linear-gradient(135deg,#7f1d1d,#dc2626)",
-        "🌊": "linear-gradient(135deg,#0c4a6e,#0284c7)",
-        "🌋": "linear-gradient(135deg,#450a0a,#991b1b)",
-        "⛰️": "linear-gradient(135deg,#451a03,#92400e)",
-        "🫨": "linear-gradient(135deg,#3f3f46,#71717a)",
-        "❓": "linear-gradient(135deg,#1e1b4b,#4f46e5)"
-      };
-      const grad = typeGradients[emoji] || "linear-gradient(135deg,#1e293b,#334155)";
-      const typeColors = { "🔥": "#ef4444", "🌊": "#0ea5e9", "🌋": "#b91c1c", "⛰️": "#a16207", "🫨": "#71717a", "❓": "#6366f1" };
-      const shapeColor = typeColors[emoji] || "#6366f1";
+      const shapeColor = category.color;
+      const grad = `linear-gradient(135deg, #0f172a, ${shapeColor})`;
 
       const s = Math.floor((Date.now() - data.createdAt) / 1000);
       const ago = s < 60 ? "Just now" : s < 3600 ? Math.floor(s / 60) + "m ago" : s < 86400 ? Math.floor(s / 3600) + "h ago" : Math.floor(s / 86400) + "d ago";
@@ -2927,9 +2953,19 @@ let pendingReport = null, pendingMarker = null;
       } else if (geometry.type === "Polygon") {
         marker = L.polygon((geometry.coordinates[0] || []).map(([lng, lat]) => [lat, lng]), { color: shapeColor, weight: 3, opacity: .95, fillColor: shapeColor, fillOpacity: .24 });
       } else {
-        const pinClass = (Date.now() - data.createdAt < 5000) ? "alertly-pin pin-pop" : "alertly-pin";
+        const pinClass = (Date.now() - data.createdAt < 5000) ? "hazard-symbol pin-pop" : "hazard-symbol";
         marker = L.marker([geometry.coordinates[1], geometry.coordinates[0]], {
-          icon: L.divIcon({ className: "", html: '<div class="' + pinClass + '"></div>', iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -32] })
+          keyboard: true,
+          riseOnHover: true,
+          title: label,
+          alt: label,
+          icon: L.divIcon({
+            className: "hazard-symbol-wrap",
+            html: `<div class="${pinClass}" style="--hazard-color:${shapeColor}"><span>${emoji}</span></div>`,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13],
+            popupAnchor: [0, -13]
+          })
         });
       }
       marker.addTo(map).bindPopup(popupHtml, { maxWidth: 310 });
