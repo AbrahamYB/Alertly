@@ -27,6 +27,13 @@ test("provider evidence renews the 15-day hazard lifecycle", () => {
   assert.doesNotMatch(source, /seenExtIds/, "one missing provider response must not remove a hazard before its lifecycle expires");
 });
 
+test("large provider refreshes use indexed external ID lookups", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /const externalIdIndex = new Map\(\)/);
+  assert.match(source, /externalIdIndex\.get\(externalIdKey\)/);
+  assert.doesNotMatch(source, /hazards\.features\.findIndex/);
+});
+
 test("Copernicus activations use one event marker instead of AOI coverage polygons", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /extId: `ems_\$\{e\.code\}`/);

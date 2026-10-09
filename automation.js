@@ -411,6 +411,14 @@ async function refreshAutomatedHazards() {
     console.log("[Automation] Starting background hazard refresh...");
 
     const hazards = getHazards();
+    const externalIdIndex = new Map();
+    hazards.features.forEach((hazard, index) => {
+      const externalId = hazard.properties?.extId;
+      if (externalId !== undefined && externalId !== null && externalId !== "") {
+        const key = String(externalId);
+        if (!externalIdIndex.has(key)) externalIdIndex.set(key, index);
+      }
+    });
     let addedCount = 0;
     let updatedCount = 0;
 
@@ -436,7 +444,8 @@ async function refreshAutomatedHazards() {
       for (const feature of features) {
         const extId = feature.properties?.extId;
         if (!extId) continue;
-        const index = hazards.features.findIndex(hazard => hazard.properties?.extId === extId);
+        const externalIdKey = String(extId);
+        const index = externalIdIndex.get(externalIdKey) ?? -1;
         const existing = index > -1 ? hazards.features[index] : null;
         feature.properties.firstSeenAt = existing?.properties?.firstSeenAt
           || existing?.properties?.detectedAt
@@ -447,6 +456,7 @@ async function refreshAutomatedHazards() {
           hazards.features[index] = feature;
           updatedCount += 1;
         } else {
+          externalIdIndex.set(externalIdKey, hazards.features.length);
           hazards.features.push(feature);
           addedCount += 1;
         }
@@ -554,12 +564,16 @@ async function refreshAutomatedHazards() {
               },
               geometry: geometry
             };
-            const existingIdx = hazards.features.findIndex(h => h.properties.extId === extId);
+            const existingIdx = externalIdIndex.get(extId) ?? -1;
             feature.properties.firstSeenAt = existingIdx > -1
               ? hazards.features[existingIdx].properties.firstSeenAt || hazards.features[existingIdx].properties.detectedAt
               : feature.properties.detectedAt;
             if (existingIdx > -1) { hazards.features[existingIdx] = feature; updatedCount++; }
-            else { hazards.features.push(feature); addedCount++; }
+            else {
+              externalIdIndex.set(extId, hazards.features.length);
+              hazards.features.push(feature);
+              addedCount++;
+            }
           }
         }
       }

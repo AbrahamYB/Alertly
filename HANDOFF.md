@@ -323,6 +323,7 @@ npm test
     - Displays `🌐 All types` and all shared hazard categories permanently with live item count badges (`.cat-badge`) and active state switching.
     - Simplified status filter to strictly 3 modes: `All reports`, `Regular submissions`, and `Suspicious / Flagged`.
     - Verified permanent erasure on deletion (`DELETE /api/moderation/reports/:id`) removing records from `data/reports.json` and unlinking attachments from `uploads/`.
+    - Automated provider refreshes build one external-ID index per cycle, avoiding repeated full-array scans as the 15-day hazard set grows.
 11. **Alertly Antigravity Checklist Execution (Phases 1–10 Complete)**:
     - **Security & Route Protection**: Replaced shared keys with invite-only owner/staff accounts, password hashing, HTTP-only sessions, limited owner bootstrap, invitations, role-aware guards, and two-party ownership transfer.
     - **Removal Request Resolution**: Implemented `POST /api/moderation/reports/:id/removal-requests/:reqId/resolve` and interactive UI buttons in `moderation.html` allowing moderators to Accept (marks report rejected) or Dismiss removal requests with audit log tracking.
