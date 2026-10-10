@@ -39,6 +39,7 @@ test("raw FIRMS thermal pixels are opt-in and old public markers are removed", (
   assert.match(source, /FIRMS_PUBLIC_HOTSPOTS/);
   assert.match(source, /function removeDisabledFirmsHotspots\(hazards\)/);
   assert.match(source, /removeDisabledFirmsHotspots\(data\)/);
+  assert.match(source, /satellite hotspot cluster/);
   assert.match(source, /EONET supplies public wildfire incidents/);
 });
 

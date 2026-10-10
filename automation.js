@@ -55,7 +55,8 @@ function isFirmsHotspotFeature(feature) {
   const properties = feature?.properties || {};
   const externalId = String(properties.extId || "");
   return properties.source === "nasa"
-    && (properties.sourceType === "satellite detection" || /^nasa_(?:firms_)?/.test(externalId));
+    && (["satellite detection", "satellite hotspot cluster"].includes(properties.sourceType)
+      || /^nasa_(?:firms_)?/.test(externalId));
 }
 
 function removeDisabledFirmsHotspots(hazards) {
