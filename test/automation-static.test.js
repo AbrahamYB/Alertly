@@ -88,3 +88,10 @@ test("Copernicus descriptions prefer the complete activation reason", () => {
   assert.match(source, /!activationReason \|\| !hasVerifiedIfrcImpact\(\{\}, activationReason\)/);
   assert.doesNotMatch(source, /replace\(\/\\\.\\\.\\\.\$\/, "\\\."\)/);
 });
+
+test("partial Copernicus failures retain the previous verified snapshot", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /let detailFetchFailed = false/);
+  assert.match(source, /detailFetchFailed = true/);
+  assert.match(source, /if \(detailFetchFailed\) throw new Error/);
+});

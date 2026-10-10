@@ -409,6 +409,7 @@ async function fetchCopernicusEMS() {
      if (!Array.isArray(data.results)) throw new Error("Invalid Copernicus response.");
 
      const features = [];
+     let detailFetchFailed = false;
      for (const e of data.results) {
         // Activations expose their centroid as WKT.
         const centroidMatch = e.centroid?.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i);
@@ -456,6 +457,7 @@ async function fetchCopernicusEMS() {
               }
            }
         } catch (aoiErr) {
+           detailFetchFailed = true;
            console.warn(`[Automation] AOIs fetch skip for ${e.code}:`, aoiErr.message);
         }
 
@@ -507,6 +509,7 @@ async function fetchCopernicusEMS() {
            });
         }
      }
+     if (detailFetchFailed) throw new Error("One or more Copernicus activation details could not be verified.");
      return features;
   } catch (e) {
     console.error("[Automation] Copernicus Surge failed:", e.message);
