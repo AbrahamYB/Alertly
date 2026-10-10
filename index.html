@@ -1065,7 +1065,7 @@ scroll-behavior: auto !important;
       bounds: WORLD_BOUNDS,
       updateWhenIdle: true,
       updateWhenZooming: false,
-      keepBuffer: 1
+      keepBuffer: 2
     };
     const satelliteImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
       ...tileLoadingOptions,
@@ -1193,18 +1193,7 @@ scroll-behavior: auto !important;
     }
 
     let hazardLoadController = null;
-    let hazardLoadTimer = null;
     let lastHazardRenderSignature = "";
-
-    function sharedHazardViewport(bounds, zoom) {
-      const step = zoom >= 8 ? 0.25 : zoom >= 6 ? 0.5 : 1;
-      return [
-        Math.floor(bounds.getWest() / step) * step,
-        Math.floor(bounds.getSouth() / step) * step,
-        Math.ceil(bounds.getEast() / step) * step,
-        Math.ceil(bounds.getNorth() / step) * step
-      ].map(value => value.toFixed(2)).join(",");
-    }
 
     async function loadHazardsFromServer() {
       let data = null;
@@ -1216,9 +1205,7 @@ scroll-behavior: auto !important;
         if (!enabledTypes.length) return;
         if (hazardLoadController) hazardLoadController.abort();
         hazardLoadController = new AbortController();
-        const bounds = map.getBounds();
-        const bbox = sharedHazardViewport(bounds, map.getZoom());
-        const query = `bbox=${encodeURIComponent(bbox)}&types=${encodeURIComponent(enabledTypes.join(","))}`;
+        const query = `types=${encodeURIComponent(enabledTypes.join(","))}`;
         const [hazardResponse, communityResponse] = await Promise.all([
           fetch(`/hazards/data?${query}`, { signal: hazardLoadController.signal }),
           fetch(`/api/reports/data?view=map&${query}`, { signal: hazardLoadController.signal, cache: "no-store" })
@@ -1686,10 +1673,6 @@ function styleFor(hazard, severity) {
       syncSidebarVar();
     }
 
-    function scheduleHazardLoad() {
-      clearTimeout(hazardLoadTimer);
-      hazardLoadTimer = setTimeout(loadHazardsFromServer, 140);
-    }
     function syncSidebarVar() {
       const isCollapsed = sidebar.classList.contains("collapsed");
       const w = window.innerWidth;
@@ -1739,7 +1722,6 @@ function styleFor(hazard, severity) {
     syncStaffControls();
 
     loadHazardsFromServer();
-    map.on("moveend zoomend", scheduleHazardLoad);
     let periodicHazardTimer = null;
     function schedulePeriodicHazardRefresh() {
       clearTimeout(periodicHazardTimer);
