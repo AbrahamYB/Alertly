@@ -64,17 +64,18 @@ test("hazards leave the public map after 15 days without renewed evidence", () =
   assert.equal(isHazardCurrent(expired, now), false);
 });
 
-test("confirmed-ended hazards leave the public map immediately", () => {
+test("provider-ended hazards remain available until the 15-day lifecycle expires", () => {
   const now = new Date("2026-02-01T00:00:00Z").getTime();
   const base = {
     type: "Feature",
     properties: { hazard: "fire", lastSeenAt: new Date(now).toISOString() },
     geometry: { type: "Point", coordinates: [-87, 15] },
   };
-  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, status: "resolved" } }), now), false);
-  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, providerActive: false } }), now), false);
-  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, endedAt: "2026-01-31T23:59:59Z" } }), now), false);
+  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, status: "resolved" } }), now), true);
+  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, providerActive: false } }), now), true);
+  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, endedAt: "2026-01-31T23:59:59Z" } }), now), true);
   assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, endedAt: "2026-02-01T00:00:01Z" } }), now), true);
+  assert.equal(isHazardCurrent(normalizeHazard({ ...base, properties: { ...base.properties, lastSeenAt: "2026-01-16T00:00:00Z" } }), now), false);
 });
 
 test("public hazards omit internal evidence detail", () => {

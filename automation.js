@@ -6,7 +6,7 @@ import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
 import { isDeprecatedHazardFeature, isHazardCurrent } from "./lib/domain.js";
-import { isPublicGdacsEvent } from "./lib/gdacs-policy.js";
+import { DEFAULT_USGS_MIN_MAGNITUDE, isPublicEarthquake } from "./lib/earthquake-policy.js";
 import { resolveCopernicusEventLocation } from "./lib/hazard-location.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -121,13 +121,26 @@ function formatDateString(str) {
 let isRefreshing = false;
 
 async function fetchUSGSEarthquakes() {
-  const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+  const configuredMinimum = Number(process.env.USGS_MIN_MAGNITUDE);
+  const minimumMagnitude = Number.isFinite(configuredMinimum) && configuredMinimum >= 0
+    ? configuredMinimum
+    : DEFAULT_USGS_MIN_MAGNITUDE;
+  const startTime = new Date(Date.now() - HAZARD_RETENTION_MS).toISOString();
+  const params = new URLSearchParams({
+    format: "geojson",
+    starttime: startTime,
+    minmagnitude: String(minimumMagnitude),
+    orderby: "time-asc",
+    limit: "20000",
+  });
+  const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?${params}`;
   try {
     const resp = await fetchOfficial(url);
     const data = await resp.json();
     return (data.features || []).filter(f => {
       const [lng, lat] = f.geometry.coordinates;
-      return lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3];
+      return isPublicEarthquake(f.properties, minimumMagnitude)
+        && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3];
     }).map(f => ({
       type: "Feature",
       geometry: f.geometry,
@@ -499,8 +512,10 @@ async function refreshAutomatedHazards() {
       }
     };
 
-    console.log("[Automation] Fetching satellite earthquake data...");
-    mergeProviderFeatures("usgs", await fetchUSGSEarthquakes());
+    console.log("[Automation] Fetching significant earthquake data...");
+    const usgsFeatures = await fetchUSGSEarthquakes();
+    reconcileProviderSnapshot("usgs", usgsFeatures);
+    mergeProviderFeatures("usgs", usgsFeatures);
 
     console.log("[Automation] Checking public satellite thermal feed settings...");
     if (FIRMS_PUBLIC_HOTSPOTS && process.env.FIRMS_MAP_KEY) {
@@ -517,7 +532,6 @@ async function refreshAutomatedHazards() {
 
     console.log("[Automation] Fetching NASA Observatory events (EONET)...");
     const eonetFeatures = await fetchNASAEonet();
-    reconcileProviderSnapshot("nasa_eonet", eonetFeatures);
     mergeProviderFeatures("nasa_eonet", eonetFeatures);
 
     console.log("[Automation] Fetching RSOE EDIS events...");
@@ -539,8 +553,6 @@ async function refreshAutomatedHazards() {
         const xml = await resp.text();
         const $xml = cheerio.load(xml, { xmlMode: true });
         const items = $xml("item").toArray();
-        const currentGdacsIds = new Set();
-
         for (const el of items) {
           const title = $xml(el).find("title").text();
           let latStr = $xml(el).find("gdacs\\:lat").text() || $xml(el).find("lat").first().text() || $xml(el).find("geo\\:lat").text();
@@ -556,9 +568,7 @@ async function refreshAutomatedHazards() {
           const gdacsType = $xml(el).find("gdacs\\:eventtype").text()?.toLowerCase() || "";
           const alertLevel = ($xml(el).find("gdacs\\:alertlevel").text() || "green").toLowerCase();
           const severityElement = $xml(el).find("gdacs\\:severity").first();
-          const populationElement = $xml(el).find("gdacs\\:population").first();
           const burnedArea = Number(severityElement.attr("value")) || 0;
-          const affectedPopulation = Number(populationElement.attr("value")) || 0;
           const providerActive = $xml(el).find("gdacs\\:iscurrent").text().toLowerCase() !== "false";
           const fromDate = $xml(el).find("gdacs\\:fromdate").text() || "";
           const toDate = $xml(el).find("gdacs\\:todate").text() || "";
@@ -566,8 +576,7 @@ async function refreshAutomatedHazards() {
           const eventid = $xml(el).find("gdacs\\:eventid").text() || "";
           if (title && eventid && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
             const extId = `gdacs_${gdacsType}_${eventid}`;
-            if (!isPublicGdacsEvent({ eventType: gdacsType, providerActive, alertLevel, burnedArea, affectedPopulation })) continue;
-            currentGdacsIds.add(extId);
+            if (!providerActive) continue;
             const categoryMap = { "eq": "earthquake", "tc": "storm", "fl": "flood", "wf": "fire", "vo": "volcano", "ls": "landslide", "dr": "drought", "hw": "heatwave" };
             const hazardType = categoryMap[gdacsType] || "other";
             const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
@@ -634,14 +643,8 @@ async function refreshAutomatedHazards() {
             }
           }
         }
-        const beforeReconciliation = hazards.features.length;
-        hazards.features = hazards.features.filter(feature =>
-          feature.properties?.source !== "gdacs" || currentGdacsIds.has(String(feature.properties?.extId || ""))
-        );
-        providerRemovedCount += beforeReconciliation - hazards.features.length;
-        rebuildExternalIdIndex();
-        providerStatus.gdacs.itemCount = currentGdacsIds.size;
-        providerStatus.gdacs.message = `${currentGdacsIds.size} current public event${currentGdacsIds.size === 1 ? "" : "s"} received.`;
+        providerStatus.gdacs.itemCount = items.length;
+        providerStatus.gdacs.message = `${items.length} current feed item${items.length === 1 ? "" : "s"} received.`;
       }
     } catch (e) {
       cycleFailed = true;

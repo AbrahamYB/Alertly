@@ -24,19 +24,26 @@ test("provider evidence renews the 15-day hazard lifecycle", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /HAZARD_RETENTION_MS = 15 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(source, /feature\.properties\.lastSeenAt = checkedAt/);
-  assert.match(source, /reconcileProviderSnapshot\("nasa_eonet", eonetFeatures\)/);
+  assert.doesNotMatch(source, /reconcileProviderSnapshot\("nasa_eonet"/);
 });
 
-test("GDACS exposes only current public-impact events and labels wildfire dates accurately", () => {
+test("GDACS retains active feed events for the lifecycle and labels wildfire dates accurately", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
-  const policy = fs.readFileSync(path.join(projectRoot, "lib", "gdacs-policy.js"), "utf8");
   assert.match(source, /gdacs\\\\:iscurrent/);
   assert.match(source, /gdacs\\\\:todate/);
   assert.match(source, /gdacs\\\\:alertlevel/);
-  assert.match(source, /isPublicGdacsEvent/);
-  assert.match(policy, /burnedArea >= 10000 && affectedPopulation >= 10000/);
+  assert.match(source, /if \(!providerActive\) continue/);
   assert.match(source, /Last satellite detection:/);
-  assert.match(source, /currentGdacsIds\.has/);
+  assert.doesNotMatch(source, /currentGdacsIds/);
+});
+
+test("USGS uses a rolling 15-day query and removes microearthquakes", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /DEFAULT_USGS_MIN_MAGNITUDE/);
+  assert.match(source, /minmagnitude: String\(minimumMagnitude\)/);
+  assert.match(source, /starttime: startTime/);
+  assert.match(source, /reconcileProviderSnapshot\("usgs", usgsFeatures\)/);
+  assert.doesNotMatch(source, /summary\/all_day\.geojson/);
 });
 
 test("operators can run one immediate refresh without changing the fixed schedule", () => {
