@@ -27,6 +27,8 @@ test("provider health includes every connected hazard source", () => withProvide
   fs.writeFileSync(metadataFile, JSON.stringify({
     providerStatus: {
       ifrc_go: { status: "healthy", lastSuccessAt: recent },
+      fema: { status: "healthy", lastSuccessAt: recent },
+      nifc_irwin: { status: "healthy", lastSuccessAt: recent },
       usgs: { status: "supporting-only", lastSuccessAt: recent },
       nasa_eonet: { status: "supporting-only", message: "Not published without impact evidence." },
       gdacs: { status: "supporting-only", lastSuccessAt: recent },
@@ -37,7 +39,7 @@ test("provider health includes every connected hazard source", () => withProvide
   try {
     const result = readProviderStatus(metadataFile);
     assert.deepEqual(result.providers.map(provider => provider.name), [
-      "IFRC GO verified emergencies", "USGS PAGER earthquakes", "NASA EONET", "GDACS modelled alerts", "RSOE EDIS clusters", "Copernicus EMS", "NASA FIRMS hotspots"
+      "IFRC GO verified emergencies", "FEMA disaster declarations", "NIFC/IRWIN wildfire incidents", "USGS PAGER earthquakes", "NASA EONET", "GDACS modelled alerts", "RSOE EDIS clusters", "Copernicus EMS", "NASA FIRMS hotspots"
     ]);
     assert.equal(result.providers.find(provider => provider.name === "RSOE EDIS clusters").status, "disabled");
     assert.equal(result.providers.find(provider => provider.name === "NASA EONET").status, "supporting-only");

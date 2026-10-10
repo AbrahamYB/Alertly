@@ -10,6 +10,13 @@ test("only verified IFRC records become public humanitarian incidents", () => {
   assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "ifrc_go", ifrcImpactVerified: false } }), false);
 });
 
+test("official declarations and operational wildfire incidents require provider verification", () => {
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "fema", femaDeclarationVerified: true } }), true);
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "fema", femaDeclarationVerified: false } }), false);
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "nifc_irwin", nifcOperationalIncident: true } }), true);
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "nifc_irwin", nifcOperationalIncident: false } }), false);
+});
+
 test("Copernicus publishes supported emergency responses and recent closed responses", () => {
   const now = new Date("2026-10-10T00:00:00Z").getTime();
   const retention = 15 * 24 * 60 * 60 * 1000;

@@ -18,6 +18,7 @@ import {
   latestPublicFieldReport,
   summarizeIfrcNarrative,
 } from "./lib/ifrc-impact.js";
+import { buildFemaFeatures, buildNifcFeatures } from "./lib/official-incidents.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,6 +184,23 @@ function cleanIfrcTitle(value) {
     .trim();
 }
 
+function descriptiveIfrcTitle(value, hazard, countryNames) {
+  const cleaned = cleanIfrcTitle(value);
+  const labels = {
+    earthquake: "Earthquake", fire: "Fire", flood: "Flood", storm: "Storm",
+    volcano: "Volcanic activity", landslide: "Landslide", drought: "Drought", heatwave: "Extreme heat",
+  };
+  const hazardWords = {
+    earthquake: /earthquake|seismic/i, fire: /fire|burn/i, flood: /flood|inundat/i,
+    storm: /storm|cyclone|hurricane|typhoon|wind/i, volcano: /volcan|eruption/i,
+    landslide: /landslide|mudslide|debris flow/i, drought: /drought|water scarcity/i,
+    heatwave: /heat|temperature/i,
+  };
+  if (cleaned && hazardWords[hazard]?.test(cleaned)) return cleaned;
+  const fallback = cleaned || `emergency in ${countryNames.join(", ")}`;
+  return `${labels[hazard] || "Hazard"} — ${fallback}`;
+}
+
 function plainTextFromHtml(value) {
   if (!value) return "";
   return cheerio.load(String(value)).text().replace(/\s+/g, " ").trim();
@@ -239,7 +257,7 @@ async function fetchIfrcVerifiedIncidents() {
           hazard,
           severity: ifrcSeverity(event, impactCounts),
           confidence: "confirmed",
-          title: cleanIfrcTitle(event.name) || `${hazard} emergency in ${countryNames.join(", ")}`,
+          title: descriptiveIfrcTitle(event.name, hazard, countryNames),
           notes: [
             `Verified IFRC humanitarian field report${countryNames.length ? ` for ${countryNames.join(", ")}` : ""}.`,
             impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
@@ -268,6 +286,68 @@ async function fetchIfrcVerifiedIncidents() {
     return features;
   } catch (error) {
     console.error("[Automation] IFRC GO fetch failed:", error.message);
+    return null;
+  }
+}
+
+async function fetchFemaDeclarations() {
+  const cutoffMs = Date.now() - HAZARD_RETENTION_MS;
+  const params = new URLSearchParams({
+    $filter: `declarationDate ge '${new Date(cutoffMs).toISOString()}'`,
+    $orderby: "declarationDate desc",
+    $top: "1000",
+  });
+  try {
+    const response = await fetchOfficial(`https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries?${params}`);
+    const data = await response.json();
+    if (!Array.isArray(data.DisasterDeclarationsSummaries)) throw new Error("Invalid OpenFEMA response.");
+    const centersByDisaster = new Map();
+    try {
+      const geometryBase = "https://gis.fema.gov/arcgis/rest/services/FEMA/DECs/FeatureServer";
+      const metadataResponse = await fetchOfficial(`${geometryBase}?f=json`);
+      const metadata = await metadataResponse.json();
+      const disasterNumbers = [...new Set(data.DisasterDeclarationsSummaries.map(row => Number(row.disasterNumber)).filter(Number.isFinite))];
+      const centerResults = await Promise.all(disasterNumbers.map(async disasterNumber => {
+        const layer = (metadata.layers || []).find(candidate => String(candidate.name || "").includes(`-${disasterNumber}-`));
+        if (!layer) return null;
+        const extentParams = new URLSearchParams({ where: "1=1", returnExtentOnly: "true", outSR: "4326", f: "json" });
+        const extentResponse = await fetchOfficial(`${geometryBase}/${layer.id}/query?${extentParams}`);
+        const extent = (await extentResponse.json()).extent;
+        if (![extent?.xmin, extent?.ymin, extent?.xmax, extent?.ymax].every(Number.isFinite)) return null;
+        return [disasterNumber, [(extent.xmin + extent.xmax) / 2, (extent.ymin + extent.ymax) / 2]];
+      }));
+      for (const result of centerResults) if (result) centersByDisaster.set(result[0], result[1]);
+    } catch (geometryError) {
+      console.warn("[Automation] FEMA declared-area geometry unavailable; using disclosed state centers:", geometryError.message);
+    }
+    return buildFemaFeatures(data.DisasterDeclarationsSummaries, { cutoffMs, bbox: BBOX, centersByDisaster });
+  } catch (error) {
+    console.error("[Automation] OpenFEMA fetch failed:", error.message);
+    return null;
+  }
+}
+
+async function fetchNifcWildfires() {
+  const cutoffMs = Date.now() - HAZARD_RETENTION_MS;
+  const baseUrl = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0/query";
+  const params = new URLSearchParams({
+    where: "IncidentTypeCategory = 'WF'",
+    outFields: [
+      "IncidentName", "IncidentShortDescription", "IncidentTypeCategory", "IncidentSize",
+      "PercentContained", "TotalIncidentPersonnel", "FireOutDateTime", "FireDiscoveryDateTime",
+      "ModifiedOnDateTime_dt", "IrwinID", "UniqueFireIdentifier", "GlobalID", "POOState",
+    ].join(","),
+    returnGeometry: "true",
+    outSR: "4326",
+    f: "geojson",
+  });
+  try {
+    const response = await fetchOfficial(`${baseUrl}?${params}`);
+    const data = await response.json();
+    if (!Array.isArray(data.features)) throw new Error("Invalid NIFC response.");
+    return buildNifcFeatures(data.features, { cutoffMs, bbox: BBOX });
+  } catch (error) {
+    console.error("[Automation] NIFC fetch failed:", error.message);
     return null;
   }
 }
@@ -573,6 +653,16 @@ async function refreshAutomatedHazards() {
     mergeProviderFeatures("ifrc_go", correlated.ifrcFeatures);
     if (Array.isArray(correlated.copernicusFeatures)) reconcileProviderSnapshot("copernicus", correlated.copernicusFeatures);
     mergeProviderFeatures("copernicus", correlated.copernicusFeatures);
+
+    console.log("[Automation] Fetching recent FEMA disaster declarations...");
+    const femaFeatures = await fetchFemaDeclarations();
+    if (Array.isArray(femaFeatures)) reconcileProviderSnapshot("fema", femaFeatures);
+    mergeProviderFeatures("fema", femaFeatures);
+
+    console.log("[Automation] Fetching significant current NIFC wildfires...");
+    const nifcFeatures = await fetchNifcWildfires();
+    if (Array.isArray(nifcFeatures)) reconcileProviderSnapshot("nifc_irwin", nifcFeatures);
+    mergeProviderFeatures("nifc_irwin", nifcFeatures);
 
     const initialCount = hazards.features.length;
     hazards.features = hazards.features.filter((feature) =>

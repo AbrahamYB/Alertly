@@ -38,6 +38,8 @@ test("a marker requires reported consequences rather than detection or forecast 
   const empty = { dead: 0, injured: 0, missing: 0, affected: 0, displaced: 0, assisted: 0 };
   assert.equal(hasVerifiedIfrcImpact(empty, "An earthquake was detected and aftershocks are possible."), false);
   assert.equal(hasVerifiedIfrcImpact(empty, "Homes were damaged and residents were evacuated."), true);
+  assert.equal(hasVerifiedIfrcImpact(empty, "Flooding affected homes and left several people trapped."), true);
+  assert.equal(hasVerifiedIfrcImpact(empty, "Infrastructure collapses caused loss of human lives."), true);
   assert.equal(hasVerifiedIfrcImpact({ ...empty, affected: 12 }, ""), true);
 });
 

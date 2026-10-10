@@ -12,6 +12,8 @@ test("every impact-backed hazard provider is connected to the refresh cycle", ()
     "await fetchUSGSEarthquakes()",
     "await fetchCopernicusEMS()",
     "await fetchIfrcVerifiedIncidents()",
+    "await fetchFemaDeclarations()",
+    "await fetchNifcWildfires()",
   ]) {
     assert.ok(source.includes(call), `automation refresh is missing ${call}`);
   }
