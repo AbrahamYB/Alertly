@@ -9,10 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin />
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
 
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
 
   <style>
     :root {
@@ -96,7 +98,7 @@
 
     #reportBtn .rep-icon {
       width: 38px;
-      
+
       height: 38px;
       border-radius: 10px;
       background: linear-gradient(135deg, #34d399, #10b981);
@@ -182,7 +184,7 @@
       position: relative;
       overflow: hidden;
       backface-visibility: hidden;
-      
+
       -webkit-backface-visibility: hidden;
       will-change: transform;
       transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), filter 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
@@ -205,7 +207,7 @@
 
     #sidebar.collapsed .sidebar-icon {
       transform: rotate(90deg) translateZ(0);
-      
+
     }
 
     #sidebar h2 {
@@ -347,7 +349,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      
+
       padding-left: calc(var(--page-gutter) + var(--sidebar-w) + 12px);
       padding-right: calc(var(--page-gutter) + var(--report-btn-w) + 12px);
       transition: padding 0.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -551,7 +553,7 @@
       box-sizing: border-box;
       margin-top: 8px;
       border-radius: 22px;
-      padding: 16px 14px 12px 14px; 
+      padding: 16px 14px 12px 14px;
       max-height: 480px;
       overflow-y: auto !important;
       transition: max-height 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease;
@@ -559,9 +561,9 @@
       scrollbar-width: thin;
       scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
 
-scroll-behavior: auto !important; 
-      
-      overscroll-behavior-y: contain; 
+scroll-behavior: auto !important;
+
+      overscroll-behavior-y: contain;
       -webkit-overflow-scrolling: touch;
       pointer-events: auto;
     }
@@ -639,7 +641,7 @@ scroll-behavior: auto !important;
         0 8px 25px rgba(0, 0, 0, 0.3),
         inset 0 1px 0 rgba(255, 255, 255, 0.15);
       position: relative;
-      overflow: visible; 
+      overflow: visible;
       contain: layout;
       transition: height 0.15s ease;
     }
@@ -648,7 +650,7 @@ scroll-behavior: auto !important;
       content: "";
       position: absolute;
       inset: 0;
-      
+
       pointer-events: none;
     }
 
@@ -1038,7 +1040,7 @@ scroll-behavior: auto !important;
     <div class="chat-body hidden glass" id="chat-body"></div>
   </div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/vendor/leaflet/leaflet.js"></script>
   <script src="/hazard-ui.js"></script>
   <script>
     const WORLD_BOUNDS = L.latLngBounds([[-85.0511, -180], [85.0511, 180]]);
@@ -1058,28 +1060,37 @@ scroll-behavior: auto !important;
     }
     map.whenReady(enforceScreenAwareMinimumZoom);
     map.on("resize", enforceScreenAwareMinimumZoom);
+    const tileLoadingOptions = {
+      noWrap: true,
+      bounds: WORLD_BOUNDS,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
+      keepBuffer: 1
+    };
+    const satelliteImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      ...tileLoadingOptions,
+      attribution: "Tiles &copy; Esri &mdash; Source: i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community"
+    });
+    const satelliteLabels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+      ...tileLoadingOptions,
+      attribution: "Labels &copy; Esri"
+    });
+    const satelliteLayer = L.layerGroup([satelliteImagery]);
+    const enableSatelliteLabels = () => {
+      if (!satelliteLayer.hasLayer(satelliteLabels)) satelliteLayer.addLayer(satelliteLabels);
+    };
+    satelliteImagery.once("load", enableSatelliteLabels);
+    setTimeout(enableSatelliteLabels, 2500);
+
     const baseLayers = {
       osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        ...tileLoadingOptions,
         attribution: "© OpenStreetMap contributors",
-        noWrap: true,
-        bounds: WORLD_BOUNDS
       }),
-      satellite: L.layerGroup([
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-          attribution: "Tiles &copy; Esri &mdash; Source: i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community",
-          noWrap: true,
-          bounds: WORLD_BOUNDS
-        }),
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
-          attribution: "Labels &copy; Esri",
-          noWrap: true,
-          bounds: WORLD_BOUNDS
-        })
-      ]),
+      satellite: satelliteLayer,
       terrain: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+        ...tileLoadingOptions,
         attribution: "Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community",
-        noWrap: true,
-        bounds: WORLD_BOUNDS
       })
     };
     let currentBaseLayer = baseLayers.satellite;
@@ -1106,7 +1117,8 @@ scroll-behavior: auto !important;
       }
 
       currentBaseLayer.addTo(map);
-      currentBaseLayer.bringToBack();
+      if (typeof currentBaseLayer.bringToBack === "function") currentBaseLayer.bringToBack();
+      else currentBaseLayer.eachLayer?.(layer => layer.bringToBack?.());
     }
 
     satToggle.addEventListener("change", (e) => {
@@ -1167,7 +1179,7 @@ scroll-behavior: auto !important;
     const savedHazardLayers = readHazardLayerPreferences();
     Object.entries(toggles).forEach(([key, toggle]) => {
       if (!toggle) return;
-      toggle.checked = savedHazardLayers[key] === true;
+      toggle.checked = savedHazardLayers[key] !== false;
       setGroupVisible(key, toggle.checked);
       toggle.addEventListener("change", event => {
         setGroupVisible(key, event.target.checked);
@@ -1182,6 +1194,7 @@ scroll-behavior: auto !important;
 
     let hazardLoadController = null;
     let hazardLoadTimer = null;
+    let lastHazardRenderSignature = "";
 
     function sharedHazardViewport(bounds, zoom) {
       const step = zoom >= 8 ? 0.25 : zoom >= 6 ? 0.5 : 1;
@@ -1215,6 +1228,9 @@ scroll-behavior: auto !important;
           type: "FeatureCollection",
           features: [...(hazardData.features || []), ...(communityData.features || [])]
         };
+        const renderSignature = JSON.stringify(data.features);
+        if (renderSignature === lastHazardRenderSignature) return;
+        lastHazardRenderSignature = renderSignature;
         Object.values(hazardGroups).forEach(group => group.clearLayers());
 
         if (data && data.features) {
@@ -1414,7 +1430,7 @@ function styleFor(hazard, severity) {
       const CHARS_PER_TICK = 2;
       const TICK_MS = 16;
       let typingTimer = null;
-      bot.innerHTML = ""; 
+      bot.innerHTML = "";
 
       const statusEl = document.createElement("div");
       statusEl.className = "bot-status";
@@ -1521,7 +1537,7 @@ function styleFor(hazard, severity) {
       }
     }
 
-    
+
     function updateQuotaBadge(remaining, limit = 15, unlimited = false) {
       const badge = document.getElementById("chat-quota-badge");
       if (!badge) return;

@@ -24,6 +24,15 @@ test("all application pages contain syntactically valid inline JavaScript", () =
   }
 });
 
+test("map pages load the pinned local Leaflet build", () => {
+  for (const filename of ["index.html", "report.html", "moderation.html", "hazard-admin.html"]) {
+    const html = readPage(filename);
+    assert.ok(html.includes('/vendor/leaflet/leaflet.js'), `${filename} must use local Leaflet JavaScript`);
+    assert.ok(html.includes('/vendor/leaflet/leaflet.css'), `${filename} must use local Leaflet styles`);
+    assert.ok(!html.includes('unpkg.com/leaflet'), `${filename} must not depend on the Leaflet CDN`);
+  }
+});
+
 test("every static element lookup points to an element that exists", () => {
   for (const filename of ["index.html", "report.html", "moderation.html", "hazard-admin.html", "staff.html"]) {
     const html = readPage(filename);

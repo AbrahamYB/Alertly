@@ -47,6 +47,14 @@ test("GET /hazard-ui.js serves the shared hazard taxonomy", async () => {
   assert.match(await response.text(), /function iconFor/);
 });
 
+test("GET /vendor/leaflet serves the pinned local map library", async () => {
+  const response = await fetch(`${BASE_URL}/vendor/leaflet/leaflet.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /javascript/);
+  assert.match(response.headers.get("cache-control") || "", /immutable/);
+  assert.match(await response.text(), /Leaflet 1\.9\.4/);
+});
+
 test("nearby hazards retain separate provider coordinates at every map scale", async () => {
   const detectedAt = new Date().toISOString();
   const coordinates = [[-87.6, 15.1], [-87.55, 15.12]];

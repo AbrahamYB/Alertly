@@ -76,10 +76,10 @@ app.use((req, res, next) => {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
-    "img-src 'self' data: blob: https://unpkg.com https://*.tile.openstreetmap.org https://server.arcgisonline.com",
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://server.arcgisonline.com",
     "media-src 'self' blob:",
     "connect-src 'self'",
     "worker-src 'self' blob:",
@@ -148,6 +148,12 @@ app.use("/uploads", express.static(UPLOADS_DIR, {
   setHeaders: (res) => {
     res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
   }
+}));
+app.use("/vendor/leaflet", express.static(path.join(__dirname, "node_modules", "leaflet", "dist"), {
+  dotfiles: "deny",
+  index: false,
+  immutable: true,
+  maxAge: "30d",
 }));
 // Create the hazard collection on first start.
 if (!fs.existsSync(HAZARDS_FILE) && HAZARDS_FILE !== BUNDLED_HAZARDS_FILE && fs.existsSync(BUNDLED_HAZARDS_FILE)) {
