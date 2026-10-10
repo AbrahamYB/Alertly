@@ -77,6 +77,8 @@ test("every hazard surface uses the shared icon taxonomy", () => {
   const home = readPage("index.html");
   assert.ok(home.includes('feature.properties.hazardDetail || ""'));
   assert.ok(home.includes('className: "hazard-symbol-wrap"'));
+  assert.ok(home.includes('class="hazard-popup__meta-row"><b>Location:</b>'));
+  assert.ok(home.includes('class="hazard-popup__meta-row"><b>Event date:</b>'));
 
   const reports = readPage("report.html");
   assert.ok(reports.includes("const categoryId = AlertlyHazards.normalize(data.type)"));

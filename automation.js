@@ -297,9 +297,6 @@ async function fetchIfrcVerifiedIncidents() {
             impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
             severityLevel ? `IFRC alert level: ${severityLevel}.` : "",
             narrativeSummary,
-            districtNames.length
-              ? `Location: center of the IFRC-reported district${districtNames.length === 1 ? "" : "s"}: ${districtNames.join(", ")}.`
-              : `Location: country-level report; marker uses the ${primaryCountry?.name || "affected country"} centroid until a verified incident coordinate is available.`,
           ].filter(Boolean).join(" "),
           automated: true,
           source: "ifrc_go",
@@ -311,6 +308,7 @@ async function fetchIfrcVerifiedIncidents() {
           countryNames,
           countryCodes: eventCountries.map(country => country.iso3).filter(Boolean),
           districtNames,
+          locationLabel: districtNames.length ? districtNames.join(", ") : countryNames.join(", "),
           reportedImpacts: impactCounts,
           providerSeverity: severityLevel || undefined,
           locationEstimated: true,
@@ -423,10 +421,7 @@ function correlateVerifiedIncidents(ifrcFeatures, usgsFeatures, copernicusFeatur
     feature.geometry = bestLocation.geometry;
     feature.properties.locationEstimated = Boolean(bestLocation.properties?.locationEstimated);
     const sourceName = bestLocation.properties?.source === "usgs" ? "USGS epicenter" : "Copernicus emergency activation";
-    feature.properties.notes = feature.properties.notes.replace(
-      /Location: [^.]+\./,
-      `Location matched to the ${sourceName}.`,
-    );
+    feature.properties.locationLabel = bestLocation.properties?.locationLabel || sourceName;
     feature.properties.supportingSourceUrl = bestLocation.properties?.sourceUrl;
   }
   return {
@@ -526,7 +521,6 @@ async function fetchCopernicusEMS() {
                    providerSummary,
                    `${productCount} mapping product(s); ${Number(e.n_aois) || areaNames.length || 0} requested area(s).`,
                    mappedAreaSummary.trim(),
-                   `Location: ${location.source}.`,
                  ].filter(Boolean).join(" "),
                  automated: true,
                  source: "copernicus",
@@ -537,6 +531,7 @@ async function fetchCopernicusEMS() {
                  responsePhase: String(e.drmPhase || "response"),
                  providerClosed: Boolean(e.closed),
                  countries,
+                 locationLabel: areaNames.length ? areaNames.join(", ") : countries,
                  mappingProducts: productCount,
                  mappedAreas: Number(e.n_aois) || areaNames.length || 0,
                  detectedAt: activationAt,

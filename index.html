@@ -788,6 +788,8 @@ scroll-behavior: auto !important;
     .hazard-popup { color:#132238; line-height:1.42; min-width:190px; }
     .hazard-popup__title { color:#4f55e8; font-weight:800; font-size:14px; line-height:1.35; margin:0 0 9px; overflow-wrap:anywhere; }
     .hazard-popup__meta { color:#52627a; font-size:11px; line-height:1.5; padding:8px 0; border-top:1px solid #dce3ec; border-bottom:1px solid #dce3ec; }
+    .hazard-popup__meta-row { display:grid; grid-template-columns:max-content 1fr; column-gap:5px; align-items:start; }
+    .hazard-popup__meta-row + .hazard-popup__meta-row { margin-top:2px; }
     .hazard-popup__notes { color:#172033; margin:10px 0; white-space:pre-wrap; }
     .hazard-popup__link { color:#3478e5; font-weight:700; text-decoration:none; }
     .hazard-popup__link:hover { text-decoration:underline; }
@@ -1222,6 +1224,14 @@ scroll-behavior: auto !important;
             const notes = feature.properties.notes || "";
             const title = feature.properties.title || `${hType} alert`;
             const description = feature.properties.description || notes;
+            const fallbackLocation = feature.properties.locationEstimated
+              ? "Approximate source location"
+              : feature.properties.communityReport ? "Submitted report location" : "Source-reported location";
+            const locationLabel = feature.properties.locationLabel || fallbackLocation;
+            const eventDateValue = feature.properties.detectedAt;
+            const eventDate = eventDateValue && !Number.isNaN(new Date(eventDateValue).getTime())
+              ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(eventDateValue))
+              : "";
             let layer;
             if (feature.geometry.type === "Point") {
               const [lng, lat] = feature.geometry.coordinates;
@@ -1252,9 +1262,10 @@ scroll-behavior: auto !important;
                 <div class="hazard-popup">
                   <div class="hazard-popup__title">${safe(title)}</div>
                   <div class="hazard-popup__meta">
-                    <b>Severity:</b> ${safe(severity)} · <b>Confidence:</b> ${safe(feature.properties.confidence)}<br/>
-                    <b>Source type:</b> ${safe(feature.properties.sourceType)}<br/>
-                    <b>Location:</b> ${feature.properties.locationEstimated ? "Approximate source location" : feature.properties.communityReport ? "Submitted report location" : "Source-reported location"}
+                    <div class="hazard-popup__meta-row"><b>Severity:</b><span>${safe(severity)} · ${safe(feature.properties.confidence)} confidence</span></div>
+                    <div class="hazard-popup__meta-row"><b>Source:</b><span>${safe(feature.properties.sourceType)}</span></div>
+                    <div class="hazard-popup__meta-row"><b>Location:</b><span>${safe(locationLabel)}</span></div>
+                    ${eventDate ? `<div class="hazard-popup__meta-row"><b>Event date:</b><span>${safe(eventDate)}</span></div>` : ""}
                   </div>
                   ${description ? `<div class="hazard-popup__notes">${safe(description)}</div>` : ""}
                   ${feature.properties.sourceUrl ? `

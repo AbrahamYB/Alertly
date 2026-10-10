@@ -86,6 +86,8 @@ test("public hazards omit internal evidence detail", () => {
       hazard: "fire",
       notes: "Visible summary",
       extId: "private-provider-id",
+      detectedAt: "2026-02-01T00:00:00Z",
+      locationLabel: "Example County",
       supportingEvidence: [
         { source: "nasa", sourceUrl: "https://example.test/a", coordinates: [-87, 15] },
         { source: "nasa" },
@@ -97,6 +99,8 @@ test("public hazards omit internal evidence detail", () => {
     geometry: { type: "Point", coordinates: [-87, 15] },
   }));
   assert.equal(compact.properties.description, "Visible summary");
+  assert.equal(compact.properties.detectedAt, "2026-02-01T00:00:00.000Z");
+  assert.equal(compact.properties.locationLabel, "Example County");
   assert.deepEqual(compact.properties.evidenceSources, ["nasa", "gdacs"]);
   assert.equal(compact.properties.extId, undefined);
   assert.equal(compact.properties.supportingEvidence, undefined);
