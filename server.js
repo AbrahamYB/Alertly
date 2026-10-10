@@ -70,7 +70,8 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(self), geolocation=(self), microphone=()");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "same-site");
-  res.setHeader("Content-Security-Policy", [
+  const isSecureRequest = req.secure || String(req.get("x-forwarded-proto") || "").toLowerCase() === "https";
+  const contentSecurityPolicy = [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
@@ -84,9 +85,10 @@ app.use((req, res, next) => {
     "connect-src 'self'",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
-    "upgrade-insecure-requests",
-  ].join("; "));
-  if (process.env.NODE_ENV === "production") {
+  ];
+  if (isSecureRequest) contentSecurityPolicy.push("upgrade-insecure-requests");
+  res.setHeader("Content-Security-Policy", contentSecurityPolicy.join("; "));
+  if (process.env.NODE_ENV === "production" && isSecureRequest) {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
   if (req.path === "/staff" || req.path.startsWith("/staff/") || req.path.startsWith("/api/staff/") || req.path === "/hazard-admin" || req.path === "/moderation") {

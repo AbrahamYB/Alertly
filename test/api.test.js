@@ -40,6 +40,12 @@ test("GET /health returns healthy service status", async () => {
   assert.equal(data.service, "alertly");
 });
 
+test("local HTTP does not upgrade same-origin map assets to unavailable HTTPS", async () => {
+  const response = await fetch(`${BASE_URL}/`);
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(response.headers.get("content-security-policy") || "", /upgrade-insecure-requests/);
+});
+
 test("GET /hazard-ui.js serves the shared hazard taxonomy", async () => {
   const response = await fetch(`${BASE_URL}/hazard-ui.js`);
   assert.equal(response.status, 200);
