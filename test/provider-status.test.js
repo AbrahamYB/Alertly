@@ -8,13 +8,9 @@ import { readProviderStatus } from "../lib/provider-status.js";
 function withProviderEnvironment(callback) {
   const previous = {
     ENABLE_AUTOMATION: process.env.ENABLE_AUTOMATION,
-    FIRMS_MAP_KEY: process.env.FIRMS_MAP_KEY,
-    FIRMS_PUBLIC_HOTSPOTS: process.env.FIRMS_PUBLIC_HOTSPOTS,
     PROVIDER_STALE_HOURS: process.env.PROVIDER_STALE_HOURS,
   };
   process.env.ENABLE_AUTOMATION = "true";
-  delete process.env.FIRMS_MAP_KEY;
-  delete process.env.FIRMS_PUBLIC_HOTSPOTS;
   process.env.PROVIDER_STALE_HOURS = "13";
   try { return callback(); } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -31,19 +27,20 @@ test("provider health includes every connected hazard source", () => withProvide
   fs.writeFileSync(metadataFile, JSON.stringify({
     providerStatus: {
       usgs: { status: "healthy", lastSuccessAt: recent },
-      nasa_eonet: { status: "healthy", lastSuccessAt: recent },
+      nasa_eonet: { status: "supporting-only", message: "Not published without impact evidence." },
       gdacs: { status: "healthy", lastSuccessAt: recent },
-      rsoe_edis: { status: "healthy", lastSuccessAt: recent },
+      rsoe_edis: { status: "disabled", message: "Aggregate clusters are not public incidents." },
       copernicus: { status: "healthy", lastSuccessAt: recent },
     },
   }));
   try {
     const result = readProviderStatus(metadataFile);
     assert.deepEqual(result.providers.map(provider => provider.name), [
-      "USGS Earthquakes", "NASA EONET", "GDACS", "RSOE EDIS", "Copernicus EMS", "NASA FIRMS hotspots"
+      "USGS PAGER earthquakes", "NASA EONET", "GDACS humanitarian alerts", "RSOE EDIS clusters", "Copernicus EMS", "NASA FIRMS hotspots"
     ]);
-    assert.equal(result.providers.find(provider => provider.name === "RSOE EDIS").status, "healthy");
-    assert.equal(result.providers.find(provider => provider.name === "NASA FIRMS hotspots").status, "disabled");
+    assert.equal(result.providers.find(provider => provider.name === "RSOE EDIS clusters").status, "disabled");
+    assert.equal(result.providers.find(provider => provider.name === "NASA EONET").status, "supporting-only");
+    assert.equal(result.providers.find(provider => provider.name === "NASA FIRMS hotspots").status, "supporting-only");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -56,7 +53,7 @@ test("provider health uses a schedule-compatible stale window", () => withProvid
   fs.writeFileSync(metadataFile, JSON.stringify({ providerStatus: { usgs: { status: "healthy", lastSuccessAt: stale } } }));
   try {
     const result = readProviderStatus(metadataFile);
-    assert.equal(result.providers.find(provider => provider.name === "USGS Earthquakes").status, "delayed");
+    assert.equal(result.providers.find(provider => provider.name === "USGS PAGER earthquakes").status, "delayed");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

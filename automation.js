@@ -2,11 +2,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import * as cheerio from "cheerio";
 import fs from "fs";
-import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
+import { getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
 import { isDeprecatedHazardFeature, isHazardCurrent } from "./lib/domain.js";
-import { DEFAULT_USGS_MIN_MAGNITUDE, isPublicEarthquake } from "./lib/earthquake-policy.js";
+import { isPublicEarthquake } from "./lib/earthquake-policy.js";
+import { isActionableCopernicusActivation, isActionableGdacsEvent } from "./lib/hazard-relevance.js";
 import { resolveCopernicusEventLocation } from "./lib/hazard-location.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,7 +17,6 @@ const HAZARDS_FILE = process.env.HAZARDS_FILE
   ? path.resolve(process.env.HAZARDS_FILE)
   : path.join(__dirname, "hazards.geojson");
 const HAZARD_RETENTION_MS = 15 * 24 * 60 * 60 * 1000;
-const FIRMS_PUBLIC_HOTSPOTS = /^(1|true|yes|on)$/i.test(String(process.env.FIRMS_PUBLIC_HOTSPOTS || ""));
 
 // Full-world monitoring bounds. Override with HAZARD_BBOX=minLng,minLat,maxLng,maxLat.
 const BBOX = getHazardBbox();
@@ -56,8 +56,8 @@ function isFirmsHotspotFeature(feature) {
       || /^nasa_(?:firms_)?/.test(externalId));
 }
 
-function removeDisabledFirmsHotspots(hazards) {
-  if (FIRMS_PUBLIC_HOTSPOTS || !Array.isArray(hazards?.features)) return 0;
+function removeNonIncidentHeatDetections(hazards) {
+  if (!Array.isArray(hazards?.features)) return 0;
   const previousCount = hazards.features.length;
   hazards.features = hazards.features.filter(feature => !isFirmsHotspotFeature(feature));
   return previousCount - hazards.features.length;
@@ -75,7 +75,7 @@ function getHazards() {
 function saveHazards(data) {
   const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
-    removeDisabledFirmsHotspots(data);
+    removeNonIncidentHeatDetections(data);
     // Keep collection-level sync metadata for the status API.
     data.lastUpdated = new Date().toISOString();
     data.status = "Monitoring";
@@ -94,9 +94,9 @@ function saveHazardMetadata(patch) {
   const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
     const hazards = getHazards();
-    const removedCount = removeDisabledFirmsHotspots(hazards);
+    const removedCount = removeNonIncidentHeatDetections(hazards);
     if (removedCount > 0) {
-      console.log(`[Automation] Removed ${removedCount} legacy FIRMS hotspot marker${removedCount === 1 ? "" : "s"}; EONET supplies public wildfire incidents.`);
+      console.log(`[Automation] Removed ${removedCount} raw heat detection${removedCount === 1 ? "" : "s"}; only impact-backed incidents are public.`);
     }
     Object.assign(hazards, patch);
     fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
@@ -121,15 +121,12 @@ function formatDateString(str) {
 let isRefreshing = false;
 
 async function fetchUSGSEarthquakes() {
-  const configuredMinimum = Number(process.env.USGS_MIN_MAGNITUDE);
-  const minimumMagnitude = Number.isFinite(configuredMinimum) && configuredMinimum >= 0
-    ? configuredMinimum
-    : DEFAULT_USGS_MIN_MAGNITUDE;
   const startTime = new Date(Date.now() - HAZARD_RETENTION_MS).toISOString();
   const params = new URLSearchParams({
     format: "geojson",
+    eventtype: "earthquake",
     starttime: startTime,
-    minmagnitude: String(minimumMagnitude),
+    minalertlevel: "yellow",
     orderby: "time-asc",
     limit: "20000",
   });
@@ -139,22 +136,34 @@ async function fetchUSGSEarthquakes() {
     const data = await resp.json();
     return (data.features || []).filter(f => {
       const [lng, lat] = f.geometry.coordinates;
-      return isPublicEarthquake(f.properties, minimumMagnitude)
+      return isPublicEarthquake(f.properties)
         && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3];
     }).map(f => ({
       type: "Feature",
       geometry: f.geometry,
       properties: {
         hazard: "earthquake",
-        severity: f.properties.mag >= 5 ? "high" : f.properties.mag >= 3.5 ? "medium" : "low",
+        severity: ["orange", "red"].includes(String(f.properties.alert).toLowerCase()) ? "high" : "medium",
         title: f.properties.title || `M ${f.properties.mag} - ${f.properties.place}`,
         confidence: f.properties.status === "reviewed" ? "confirmed" : "probable",
-        notes: `Depth: ${f.geometry.coordinates[2]} km. ${f.properties.felt ? `${f.properties.felt} felt report(s).` : ""}`.trim(),
+        notes: [
+          `Magnitude ${f.properties.mag}; depth ${f.geometry.coordinates[2]} km.`,
+          `USGS PAGER impact alert: ${String(f.properties.alert).toUpperCase()}.`,
+          Number.isFinite(Number(f.properties.mmi)) ? `Maximum estimated intensity: MMI ${Number(f.properties.mmi).toFixed(1)}.` : "",
+          Number.isFinite(Number(f.properties.cdi)) ? `Maximum reported intensity: ${Number(f.properties.cdi).toFixed(1)}.` : "",
+          Number(f.properties.felt) > 0 ? `${Number(f.properties.felt).toLocaleString("en-US")} felt report(s).` : "",
+        ].filter(Boolean).join(" "),
         automated: true,
         source: "usgs",
         sourceType: "official seismic feed",
         sourceUrl: f.properties.url,
         extId: `usgs_${f.id}`,
+        magnitude: Number(f.properties.mag),
+        significance: Number(f.properties.sig),
+        pagerAlert: String(f.properties.alert || "").toLowerCase(),
+        maxEstimatedIntensity: Number.isFinite(Number(f.properties.mmi)) ? Number(f.properties.mmi) : undefined,
+        maxReportedIntensity: Number.isFinite(Number(f.properties.cdi)) ? Number(f.properties.cdi) : undefined,
+        feltReports: Number(f.properties.felt) || 0,
         detectedAt: new Date(f.properties.time).toISOString(),
         lastUpdatedAt: new Date(f.properties.updated || f.properties.time).toISOString(),
         createdAt: new Date(f.properties.time).toISOString()
@@ -163,180 +172,6 @@ async function fetchUSGSEarthquakes() {
   } catch (e) {
     console.error("[Automation] USGS Fetch failed:", e.message);
     return null;
-  }
-}
-
-// NASA FIRMS VIIRS active fires from the last 24 hours.
-async function fetchNASAFires() {
-  const apiKey = process.env.FIRMS_MAP_KEY;
-  const sources = String(process.env.FIRMS_SOURCES || "VIIRS_NOAA20_NRT,VIIRS_NOAA21_NRT")
-    .split(",").map(value => value.trim()).filter(Boolean);
-  const dayRange = Math.min(5, Math.max(1, Number(process.env.FIRMS_DAY_RANGE || 1)));
-  if (!apiKey) {
-    console.warn("[Automation] NASA FIRMS disabled: FIRMS_MAP_KEY is not set.");
-    return null;
-  }
-
-  try {
-    const results = await Promise.all(sources.map(async sourceId => {
-      const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${apiKey}/${sourceId}/${BBOX[0]},${BBOX[1]},${BBOX[2]},${BBOX[3]}/${dayRange}`;
-      const response = await fetchOfficial(url, { headers: { Accept: "text/csv" } });
-      const lines = (await response.text()).trim().split("\n");
-      if (lines.length <= 1) return [];
-      const headers = lines[0].split(",").map(value => value.trim());
-      return lines.slice(1).map(row => {
-        const values = row.split(",").map(value => value.trim());
-        return headers.reduce((record, header, index) => ({ ...record, [header]: values[index] }), { sourceId });
-      });
-    }));
-    const data = results.flat();
-    console.log(`[Automation] NASA FIRMS VIIRS found ${data.length} detections from ${sources.join(", ")}.`);
-    return data.slice(0, 6000).map(detection => {
-      const temperature = detection.bright_ti4 || detection.brightness || "N/A";
-      const confidence = String(detection.confidence || "").toLowerCase();
-      const severity = confidence === "h" || Number(confidence) > 80 ? "high" : confidence === "l" ? "low" : "medium";
-      const acquiredDate = detection.acq_date
-        ? new Date(`${detection.acq_date}T${String(detection.acq_time || "0000").padStart(4, "0").replace(/(..)(..)/, "$1:$2")}:00Z`)
-        : new Date();
-      const acquiredAt = Number.isNaN(acquiredDate.getTime()) ? new Date().toISOString() : acquiredDate.toISOString();
-      return {
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [Number(detection.longitude), Number(detection.latitude)] },
-        properties: {
-          hazard: "fire",
-          title: "Satellite heat detection",
-          severity,
-          confidence: "probable",
-          notes: `VIIRS satellite heat detection (${detection.satellite || detection.sourceId}/${detection.instrument || "VIIRS"}): ${temperature}K; sensor confidence ${detection.confidence || "unknown"}.`,
-          automated: true,
-          source: "nasa",
-          sourceType: "satellite detection",
-          sourceUrl: "https://firms.modaps.eosdis.nasa.gov/",
-          extId: `nasa_${detection.sourceId}_${detection.satellite}_${detection.acq_date}_${detection.acq_time}_${detection.latitude}_${detection.longitude}`,
-          detectedAt: acquiredAt,
-          lastUpdatedAt: acquiredAt,
-        }
-      };
-    }).filter(feature => feature.geometry.coordinates.every(Number.isFinite));
-  } catch (e) {
-    console.error("[Automation] NASA FIRMS failed:", e.message);
-    return null;
-  }
-}
-
-// NASA EONET open natural events.
-async function fetchNASAEonet() {
-  const url = `https://eonet.gsfc.nasa.gov/api/v3/events?bbox=${BBOX[0]},${BBOX[3]},${BBOX[2]},${BBOX[1]}&status=open&limit=500`;
-  try {
-    const resp = await fetchOfficial(url);
-    const data = await resp.json();
-    return (data.events || []).map(e => {
-      // EONET appends geometries over time; the last entry is the current one.
-      const latestGeo = e.geometry[e.geometry.length - 1];
-      if (!latestGeo) return null;
-      const category = (e.categories?.[0]?.id || "other").toLowerCase();
-      
-      const categoryMap = {
-         "wildfires": "fire",
-         "volcanoes": "volcano",
-         "severestorms": "storm",
-         "floods": "flood",
-         "landslides": "landslide",
-         "drought": "drought",
-         "earthquakes": "earthquake",
-         "tempextremes": "heatwave",
-         "sealakeice": "other",
-         "dusthaze": "other"
-      };
-
-      return {
-        type: "Feature",
-        geometry: latestGeo,
-        properties: {
-          hazard: categoryMap[category] || "other",
-          title: e.title,
-          severity: "medium",
-          confidence: "probable",
-          notes: e.description || "Open natural event tracked by NASA EONET.",
-          automated: true,
-          source: "nasa_eonet",
-          sourceType: "NASA curated event",
-          sourceUrl: e.link || e.sources?.[0]?.url || "https://eonet.gsfc.nasa.gov/",
-          extId: `eonet_${e.id}`,
-          eventDate: latestGeo.date,
-          detectedAt: latestGeo.date,
-          lastUpdatedAt: latestGeo.date,
-          createdAt: latestGeo.date
-        }
-      };
-    }).filter((feature) => feature && featureInHazardRegion(feature, BBOX));
-  } catch (e) {
-    console.error("[Automation] NASA EONET failed:", e.message);
-    return null;
-  }
-}
-
-// RSOE EDIS emergency events.
-async function fetchRSOEEDIS() {
-  const url = `https://rsoe-edis.org/gateway/webapi/events/cluster?zoom=3`;
-  try {
-     const resp = await fetchOfficial(url);
-     const data = await resp.json();
-     if (!Array.isArray(data.features)) throw new Error("Invalid RSOE response.");
-
-     const catMap = {
-       "GE": { "ERQ": "earthquake", "VOL": "volcano" },
-       "HY": { "FLD": "flood" },
-       "WE": { "STO": "storm", "FL": "flood", "EXR": "flood" }
-     };
-
-     return data.features.flatMap(f => {
-        const properties = f?.properties || {};
-        const cat = properties.category;
-        const sub = properties.subCategory;
-        const hazard = catMap[cat]?.[sub] || "other";
-
-        const coordinates = f?.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates)
-          ? f.geometry.coordinates.map(Number)
-          : null;
-        if (!f?.geometry || !featureInHazardRegion(f, BBOX)) return [];
-        const providerDate = properties.lastUpdate || properties.eventDate;
-        const providerTimestamp = timestampOf(providerDate);
-        const providerDateIso = isoTimestamp(providerTimestamp);
-        const coordinateLabel = coordinates?.every(Number.isFinite)
-          ? `${coordinates[1].toFixed(3)}, ${coordinates[0].toFixed(3)}`
-          : "reported area";
-        const place = properties.centroid || properties.location || coordinateLabel;
-        const eventCount = Number(properties.count || properties.aggregated || 1);
-        const eventId = properties.id
-          ? `${properties.id}_${properties.subId || 0}`
-          : `${cat || "event"}_${sub || "other"}_${coordinates?.join("_") || providerDateIso}`;
-        const eventTitle = properties.title || `${properties.categoryName || hazard} near ${place}`;
-
-        return [{
-           type: "Feature",
-           geometry: f.geometry,
-           properties: {
-              hazard: hazard,
-              severity: properties.severity === "high" ? "high" : "medium",
-              confidence: "probable",
-              title: eventTitle,
-              notes: `${eventTitle}. ${properties.details || `${eventCount} nearby event${eventCount === 1 ? "" : "s"}.`} Severity: ${properties.severity || "unknown"}.`,
-              automated: true,
-              source: "rsoe_edis",
-              sourceType: "official disaster feed",
-              sourceUrl: properties.link || properties.source || "https://rsoe-edis.org/eventMap",
-              extId: `edis_${eventId}`,
-              eventDate: providerDateIso,
-              detectedAt: providerDateIso,
-              lastUpdatedAt: providerDateIso,
-              createdAt: providerDateIso
-           }
-        }];
-     });
-  } catch (e) {
-     console.error("[Automation] RSOE EDIS failed:", e.message);
-     return null;
   }
 }
 
@@ -367,7 +202,15 @@ async function fetchCopernicusEMS() {
           : categorySlug.includes("storm") || categorySlug.includes("cyclone") ? "storm"
           : categorySlug.includes("volcan") ? "volcano"
           : categorySlug.includes("earthquake") ? "earthquake"
+          : categorySlug.includes("landslide") || categorySlug.includes("mudslide") ? "landslide"
           : "other";
+        if (!isActionableCopernicusActivation({
+          hazard,
+          drmPhase: e.drmPhase,
+          closed: e.closed,
+          lastUpdate: e.lastUpdate,
+          activationTime: e.activationTime,
+        }, Date.now(), HAZARD_RETENTION_MS)) continue;
 
         let mappedAreaSummary = "";
         let areaNames = [];
@@ -391,6 +234,9 @@ async function fetchCopernicusEMS() {
         // event marker so the map does not imply that the entire AOI is affected.
         if (centroidMatch) {
            const activationAt = isoTimestamp(e.activationTime);
+           const updatedAt = isoTimestamp(e.lastUpdate || e.activationTime);
+           const countries = (e.countries || []).map(country => country.short_name).filter(Boolean).join(", ");
+           const providerSummary = String(e.search_snippet || "").replace(/\s+/g, " ").trim().replace(/\.\.\.$/, ".");
            const location = resolveCopernicusEventLocation({
               hazard,
               title: e.name,
@@ -405,15 +251,26 @@ async function fetchCopernicusEMS() {
                  severity: "high",
                  confidence: "confirmed",
                  title: e.name || `Copernicus EMS activation ${e.code}`,
-                 notes: `Copernicus EMS activation: ${e.name} (${e.code}).${mappedAreaSummary} Location: ${location.source}.`,
+                 notes: [
+                   `Copernicus emergency-response activation ${e.code}${countries ? ` for ${countries}` : ""}.`,
+                   providerSummary,
+                   `${Number(e.n_products) || 0} mapping product(s); ${Number(e.n_aois) || areaNames.length || 0} requested area(s).`,
+                   mappedAreaSummary.trim(),
+                   `Location: ${location.source}.`,
+                 ].filter(Boolean).join(" "),
                  automated: true,
                  source: "copernicus",
                  sourceType: "official emergency mapping activation",
                  sourceUrl: `https://mapping.emergency.copernicus.eu/activations/${e.code}/`,
                  extId: `ems_${e.code}`,
                  locationEstimated: location.estimated,
+                 responsePhase: String(e.drmPhase || "response"),
+                 providerClosed: Boolean(e.closed),
+                 countries,
+                 mappingProducts: Number(e.n_products) || 0,
+                 mappedAreas: Number(e.n_aois) || areaNames.length || 0,
                  detectedAt: activationAt,
-                 lastUpdatedAt: activationAt,
+                 lastUpdatedAt: updatedAt,
                  createdAt: activationAt
               }
            });
@@ -517,28 +374,29 @@ async function refreshAutomatedHazards() {
     reconcileProviderSnapshot("usgs", usgsFeatures);
     mergeProviderFeatures("usgs", usgsFeatures);
 
-    console.log("[Automation] Checking public satellite thermal feed settings...");
-    if (FIRMS_PUBLIC_HOTSPOTS && process.env.FIRMS_MAP_KEY) {
-      mergeProviderFeatures("nasa_firms", await fetchNASAFires());
-    } else {
-      providerStatus.nasa_firms = {
-        status: "disabled",
-        lastAttemptAt: new Date().toISOString(),
-        message: FIRMS_PUBLIC_HOTSPOTS
-          ? "NASA FIRMS is disabled until FIRMS_MAP_KEY is configured."
-          : "Public FIRMS hotspot markers are disabled; NASA EONET supplies curated wildfire incidents.",
-      };
-    }
-
-    console.log("[Automation] Fetching NASA Observatory events (EONET)...");
-    const eonetFeatures = await fetchNASAEonet();
-    mergeProviderFeatures("nasa_eonet", eonetFeatures);
-
-    console.log("[Automation] Fetching RSOE EDIS events...");
-    mergeProviderFeatures("rsoe_edis", await fetchRSOEEDIS());
+    providerStatus.nasa_firms = {
+      status: "supporting-only",
+      lastAttemptAt: new Date().toISOString(),
+      itemCount: 0,
+      message: "Raw thermal pixels are not public incidents because they do not prove a damaging wildfire.",
+    };
+    providerStatus.nasa_eonet = {
+      status: "supporting-only",
+      lastAttemptAt: new Date().toISOString(),
+      itemCount: 0,
+      message: "EONET visualization metadata is not published without independent impact evidence.",
+    };
+    providerStatus.rsoe_edis = {
+      status: "disabled",
+      lastAttemptAt: new Date().toISOString(),
+      itemCount: 0,
+      message: "The aggregate cluster endpoint lacks stable incident-level impact evidence.",
+    };
 
     console.log("[Automation] Fetching Copernicus EMS activations...");
-    mergeProviderFeatures("copernicus", await fetchCopernicusEMS());
+    const copernicusFeatures = await fetchCopernicusEMS();
+    reconcileProviderSnapshot("copernicus", copernicusFeatures);
+    mergeProviderFeatures("copernicus", copernicusFeatures);
 
     try {
       const gdacsUrl = "https://www.gdacs.org/xml/rss.xml";
@@ -568,7 +426,10 @@ async function refreshAutomatedHazards() {
           const gdacsType = $xml(el).find("gdacs\\:eventtype").text()?.toLowerCase() || "";
           const alertLevel = ($xml(el).find("gdacs\\:alertlevel").text() || "green").toLowerCase();
           const severityElement = $xml(el).find("gdacs\\:severity").first();
+          const populationElement = $xml(el).find("gdacs\\:population").first();
           const burnedArea = Number(severityElement.attr("value")) || 0;
+          const affectedPopulation = Number(populationElement.attr("value")) || 0;
+          const providerSeverity = severityElement.text().replace(/\s+/g, " ").trim();
           const providerActive = $xml(el).find("gdacs\\:iscurrent").text().toLowerCase() !== "false";
           const fromDate = $xml(el).find("gdacs\\:fromdate").text() || "";
           const toDate = $xml(el).find("gdacs\\:todate").text() || "";
@@ -576,7 +437,7 @@ async function refreshAutomatedHazards() {
           const eventid = $xml(el).find("gdacs\\:eventid").text() || "";
           if (title && eventid && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
             const extId = `gdacs_${gdacsType}_${eventid}`;
-            if (!providerActive) continue;
+            if (!isActionableGdacsEvent({ providerActive, alertLevel })) continue;
             const categoryMap = { "eq": "earthquake", "tc": "storm", "fl": "flood", "wf": "fire", "vo": "volcano", "ls": "landslide", "dr": "drought", "hw": "heatwave" };
             const hazardType = categoryMap[gdacsType] || "other";
             const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
@@ -603,7 +464,15 @@ async function refreshAutomatedHazards() {
             const wildfireDetails = gdacsType === "wf"
               ? [lastDetectionDate ? `Last satellite detection: ${lastDetectionDate}.` : "", burnedArea ? `Estimated burned area: ${Math.round(burnedArea).toLocaleString("en-US")} ha.` : ""]
               : [];
-            const summary = [`${impactLabel} GDACS alert.`, eventDate ? `Event date: ${eventDate}.` : "", ...wildfireDetails, impacts.length ? `Reported impact: ${impacts.join("; ")}.` : gdacsType === "wf" ? "" : cleanDesc]
+            const summary = [
+              `${impactLabel} (${alertLevel.toUpperCase()}) GDACS humanitarian-impact alert.`,
+              eventDate ? `Event date: ${eventDate}.` : "",
+              ...wildfireDetails,
+              affectedPopulation ? `Estimated population exposure: ${Math.round(affectedPopulation).toLocaleString("en-US")}.` : "",
+              impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
+              providerSeverity,
+              gdacsType === "wf" ? "" : cleanDesc,
+            ]
               .filter(Boolean).join(" ");
 
             const checkedAt = new Date().toISOString();
@@ -627,7 +496,10 @@ async function refreshAutomatedHazards() {
                 lastUpdatedAt: modifiedDate || toDate || fromDate || new Date().toISOString(),
                 createdAt: fromDate || checkedAt,
                 lastSeenAt: checkedAt,
-                providerActive: true
+                providerActive: true,
+                alertLevel,
+                affectedPopulation,
+                burnedArea: gdacsType === "wf" ? burnedArea : undefined
               },
               geometry: geometry
             };
