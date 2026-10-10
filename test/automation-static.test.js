@@ -36,6 +36,8 @@ test("GDACS retains only orange and red impact alerts and labels wildfire dates 
   assert.match(source, /alertLevel,/);
   assert.match(source, /Estimated population exposure:/);
   assert.match(source, /Last satellite detection:/);
+  assert.match(source, /gdacsType === "wf" \|\| gdacsType === "eq" \? "" : cleanDesc/);
+  assert.doesNotMatch(source, /const cleanDesc = formatDateString/);
   assert.doesNotMatch(source, /currentGdacsIds/);
 });
 
@@ -76,4 +78,11 @@ test("Copernicus activations use one event marker instead of AOI coverage polygo
   assert.match(source, /AOI extents describe mapping coverage, not the hazard footprint/);
   assert.doesNotMatch(source, /extId: `ems_aoi_/);
   assert.doesNotMatch(source, /parseWktPolygon/);
+});
+
+test("Copernicus descriptions prefer the complete activation reason", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /activationInfo\?\.reason/);
+  assert.match(source, /const providerSummary = activationReason \|\|/);
+  assert.doesNotMatch(source, /replace\(\/\\\.\\\.\\\.\$\/, "\\\."\)/);
 });

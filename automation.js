@@ -214,14 +214,18 @@ async function fetchCopernicusEMS() {
 
         let mappedAreaSummary = "";
         let areaNames = [];
+        let activationReason = "";
+        let productCount = Number(e.n_products) || 0;
         try {
            const actDetailUrl = `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${e.code}`;
            const actResp = await fetchOfficial(actDetailUrl);
            if (actResp.ok) {
               const actData = await actResp.json();
               const activationInfo = actData.results?.[0];
+              activationReason = String(activationInfo?.reason || "").replace(/\s+/g, " ").trim();
               if (activationInfo && activationInfo.aois && activationInfo.aois.length > 0) {
                  areaNames = [...new Set(activationInfo.aois.map((aoi) => String(aoi.name || "").trim()).filter(Boolean))];
+                 productCount = activationInfo.aois.reduce((total, aoi) => total + (Array.isArray(aoi.products) ? aoi.products.length : 0), 0) || productCount;
                  const areaLabel = areaNames.slice(0, 3).join(", ");
                  mappedAreaSummary = ` Copernicus mapped ${activationInfo.aois.length} area${activationInfo.aois.length === 1 ? "" : "s"}${areaLabel ? ` (${areaLabel})` : ""}.`;
               }
@@ -236,7 +240,7 @@ async function fetchCopernicusEMS() {
            const activationAt = isoTimestamp(e.activationTime);
            const updatedAt = isoTimestamp(e.lastUpdate || e.activationTime);
            const countries = (e.countries || []).map(country => country.short_name).filter(Boolean).join(", ");
-           const providerSummary = String(e.search_snippet || "").replace(/\s+/g, " ").trim().replace(/\.\.\.$/, ".");
+           const providerSummary = activationReason || String(e.search_snippet || "").replace(/\s+/g, " ").trim();
            const location = resolveCopernicusEventLocation({
               hazard,
               title: e.name,
@@ -254,7 +258,7 @@ async function fetchCopernicusEMS() {
                  notes: [
                    `Copernicus emergency-response activation ${e.code}${countries ? ` for ${countries}` : ""}.`,
                    providerSummary,
-                   `${Number(e.n_products) || 0} mapping product(s); ${Number(e.n_aois) || areaNames.length || 0} requested area(s).`,
+                   `${productCount} mapping product(s); ${Number(e.n_aois) || areaNames.length || 0} requested area(s).`,
                    mappedAreaSummary.trim(),
                    `Location: ${location.source}.`,
                  ].filter(Boolean).join(" "),
@@ -267,7 +271,7 @@ async function fetchCopernicusEMS() {
                  responsePhase: String(e.drmPhase || "response"),
                  providerClosed: Boolean(e.closed),
                  countries,
-                 mappingProducts: Number(e.n_products) || 0,
+                 mappingProducts: productCount,
                  mappedAreas: Number(e.n_aois) || areaNames.length || 0,
                  detectedAt: activationAt,
                  lastUpdatedAt: updatedAt,
@@ -442,7 +446,7 @@ async function refreshAutomatedHazards() {
             const hazardType = categoryMap[gdacsType] || "other";
             const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
             const fullDesc = ($xml(el).find("description").text() || "").replace(/^(Green|Orange|Red)\s+/i, "").trim();
-            const cleanDesc = formatDateString(fullDesc.replace(/^On\s+[A-Z][a-z]{2}\s+\d{1,2}.*?started.*?(until|to)\s+.*?\./i, "").trim());
+            const cleanDesc = fullDesc.replace(/^On\s+[A-Z][a-z]{2}\s+\d{1,2}.*?started.*?(until|to)\s+.*?\./i, "").replace(/\s+/g, " ").trim();
             let impactLabel = "Minor";
             if (alertLevel === "orange") impactLabel = "Moderate";
             if (alertLevel === "red") impactLabel = "Significant";
@@ -471,7 +475,7 @@ async function refreshAutomatedHazards() {
               affectedPopulation ? `Estimated population exposure: ${Math.round(affectedPopulation).toLocaleString("en-US")}.` : "",
               impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
               providerSeverity,
-              gdacsType === "wf" ? "" : cleanDesc,
+              gdacsType === "wf" || gdacsType === "eq" ? "" : cleanDesc,
             ]
               .filter(Boolean).join(" ");
 
