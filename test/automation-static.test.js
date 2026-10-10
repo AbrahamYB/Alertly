@@ -34,6 +34,14 @@ test("large provider refreshes use indexed external ID lookups", () => {
   assert.doesNotMatch(source, /hazards\.features\.findIndex/);
 });
 
+test("raw FIRMS thermal pixels are opt-in and old public markers are removed", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /FIRMS_PUBLIC_HOTSPOTS/);
+  assert.match(source, /function removeDisabledFirmsHotspots\(hazards\)/);
+  assert.match(source, /removeDisabledFirmsHotspots\(data\)/);
+  assert.match(source, /EONET supplies public wildfire incidents/);
+});
+
 test("Copernicus activations use one event marker instead of AOI coverage polygons", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /extId: `ems_\$\{e\.code\}`/);

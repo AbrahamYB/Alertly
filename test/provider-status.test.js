@@ -9,10 +9,12 @@ function withProviderEnvironment(callback) {
   const previous = {
     ENABLE_AUTOMATION: process.env.ENABLE_AUTOMATION,
     FIRMS_MAP_KEY: process.env.FIRMS_MAP_KEY,
+    FIRMS_PUBLIC_HOTSPOTS: process.env.FIRMS_PUBLIC_HOTSPOTS,
     PROVIDER_STALE_HOURS: process.env.PROVIDER_STALE_HOURS,
   };
   process.env.ENABLE_AUTOMATION = "true";
   delete process.env.FIRMS_MAP_KEY;
+  delete process.env.FIRMS_PUBLIC_HOTSPOTS;
   process.env.PROVIDER_STALE_HOURS = "13";
   try { return callback(); } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -38,10 +40,10 @@ test("provider health includes every connected hazard source", () => withProvide
   try {
     const result = readProviderStatus(metadataFile);
     assert.deepEqual(result.providers.map(provider => provider.name), [
-      "USGS Earthquakes", "NASA EONET", "GDACS", "RSOE EDIS", "Copernicus EMS", "NASA FIRMS"
+      "USGS Earthquakes", "NASA EONET", "GDACS", "RSOE EDIS", "Copernicus EMS", "NASA FIRMS hotspots"
     ]);
     assert.equal(result.providers.find(provider => provider.name === "RSOE EDIS").status, "healthy");
-    assert.equal(result.providers.find(provider => provider.name === "NASA FIRMS").status, "disabled");
+    assert.equal(result.providers.find(provider => provider.name === "NASA FIRMS hotspots").status, "disabled");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

@@ -15,6 +15,7 @@ const HAZARDS_FILE = process.env.HAZARDS_FILE
   ? path.resolve(process.env.HAZARDS_FILE)
   : path.join(__dirname, "hazards.geojson");
 const HAZARD_RETENTION_MS = 15 * 24 * 60 * 60 * 1000;
+const FIRMS_PUBLIC_HOTSPOTS = /^(1|true|yes|on)$/i.test(String(process.env.FIRMS_PUBLIC_HOTSPOTS || ""));
 
 // Full-world monitoring bounds. Override with HAZARD_BBOX=minLng,minLat,maxLng,maxLat.
 const BBOX = getHazardBbox();
@@ -50,6 +51,20 @@ function isRecentProviderFeature(feature, now = Date.now()) {
   return !Number.isFinite(timestamp) || now - timestamp < HAZARD_RETENTION_MS;
 }
 
+function isFirmsHotspotFeature(feature) {
+  const properties = feature?.properties || {};
+  const externalId = String(properties.extId || "");
+  return properties.source === "nasa"
+    && (properties.sourceType === "satellite detection" || /^nasa_(?:firms_)?/.test(externalId));
+}
+
+function removeDisabledFirmsHotspots(hazards) {
+  if (FIRMS_PUBLIC_HOTSPOTS || !Array.isArray(hazards?.features)) return 0;
+  const previousCount = hazards.features.length;
+  hazards.features = hazards.features.filter(feature => !isFirmsHotspotFeature(feature));
+  return previousCount - hazards.features.length;
+}
+
 function getHazards() {
   try {
     const raw = fs.readFileSync(HAZARDS_FILE, "utf8");
@@ -62,6 +77,7 @@ function getHazards() {
 function saveHazards(data) {
   const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
+    removeDisabledFirmsHotspots(data);
     // Keep collection-level sync metadata for the status API.
     data.lastUpdated = new Date().toISOString();
     data.status = "Monitoring";
@@ -80,6 +96,10 @@ function saveHazardMetadata(patch) {
   const tmpPath = `${HAZARDS_FILE}.${process.pid}.tmp`;
   try {
     const hazards = getHazards();
+    const removedCount = removeDisabledFirmsHotspots(hazards);
+    if (removedCount > 0) {
+      console.log(`[Automation] Removed ${removedCount} legacy FIRMS hotspot marker${removedCount === 1 ? "" : "s"}; EONET supplies public wildfire incidents.`);
+    }
     Object.assign(hazards, patch);
     fs.mkdirSync(path.dirname(HAZARDS_FILE), { recursive: true });
     fs.writeFileSync(tmpPath, JSON.stringify(hazards, null, 2));
@@ -466,14 +486,16 @@ async function refreshAutomatedHazards() {
     console.log("[Automation] Fetching satellite earthquake data...");
     mergeProviderFeatures("usgs", await fetchUSGSEarthquakes());
 
-    console.log("[Automation] Fetching satellite thermal data...");
-    if (process.env.FIRMS_MAP_KEY) {
+    console.log("[Automation] Checking public satellite thermal feed settings...");
+    if (FIRMS_PUBLIC_HOTSPOTS && process.env.FIRMS_MAP_KEY) {
       mergeProviderFeatures("nasa_firms", await fetchNASAFires());
     } else {
       providerStatus.nasa_firms = {
         status: "disabled",
         lastAttemptAt: new Date().toISOString(),
-        message: "NASA FIRMS is disabled until FIRMS_MAP_KEY is configured.",
+        message: FIRMS_PUBLIC_HOTSPOTS
+          ? "NASA FIRMS is disabled until FIRMS_MAP_KEY is configured."
+          : "Public FIRMS hotspot markers are disabled; NASA EONET supplies curated wildfire incidents.",
       };
     }
 
