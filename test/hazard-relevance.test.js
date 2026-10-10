@@ -3,14 +3,11 @@ import assert from "node:assert/strict";
 import {
   isActionableAutomatedHazard,
   isActionableCopernicusActivation,
-  isActionableGdacsEvent,
 } from "../lib/hazard-relevance.js";
 
-test("GDACS green monitoring events stay off the public incident map", () => {
-  assert.equal(isActionableGdacsEvent({ providerActive: true, alertLevel: "green" }), false);
-  assert.equal(isActionableGdacsEvent({ providerActive: true, alertLevel: "orange" }), true);
-  assert.equal(isActionableGdacsEvent({ providerActive: true, alertLevel: "red" }), true);
-  assert.equal(isActionableGdacsEvent({ providerActive: false, alertLevel: "red" }), false);
+test("only verified IFRC records become public humanitarian incidents", () => {
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "ifrc_go", ifrcImpactVerified: true } }), true);
+  assert.equal(isActionableAutomatedHazard({ properties: { automated: true, source: "ifrc_go", ifrcImpactVerified: false } }), false);
 });
 
 test("Copernicus publishes supported emergency responses and recent closed responses", () => {
@@ -28,5 +25,7 @@ test("unsupported automated detections are excluded even when stored", () => {
   assert.equal(isActionableAutomatedHazard(feature("nasa")), false);
   assert.equal(isActionableAutomatedHazard(feature("nasa_eonet")), false);
   assert.equal(isActionableAutomatedHazard(feature("rsoe_edis")), false);
+  assert.equal(isActionableAutomatedHazard(feature("usgs")), false);
+  assert.equal(isActionableAutomatedHazard(feature("gdacs")), false);
   assert.equal(isActionableAutomatedHazard({ properties: { automated: false, source: "community" } }), true);
 });

@@ -57,7 +57,7 @@ async function waitForServer(url, child, output) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`Test server exited early.\n${output()}`);
     try {
-      const response = await fetch(`${url}/health`);
+      const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1_000) });
       if (response.ok) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));

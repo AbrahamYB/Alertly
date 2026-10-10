@@ -7,8 +7,17 @@ import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
 import { isDeprecatedHazardFeature, isHazardCurrent } from "./lib/domain.js";
 import { isPublicEarthquake } from "./lib/earthquake-policy.js";
-import { isActionableCopernicusActivation, isActionableGdacsEvent } from "./lib/hazard-relevance.js";
+import { isActionableCopernicusActivation } from "./lib/hazard-relevance.js";
 import { resolveCopernicusEventLocation } from "./lib/hazard-location.js";
+import {
+  classifyIfrcHazard,
+  extractIfrcImpactCounts,
+  formatIfrcImpactCounts,
+  hasVerifiedIfrcImpact,
+  ifrcSeverity,
+  latestPublicFieldReport,
+  summarizeIfrcNarrative,
+} from "./lib/ifrc-impact.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,16 +117,6 @@ function saveHazardMetadata(patch) {
   }
 }
 
-function formatDateString(str) {
-  if (!str) return "";
-  return str.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, (match, d, m, y) => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const month = months[parseInt(m, 10) - 1];
-    if (!month) return match;
-    return `${month} ${parseInt(d, 10)}, ${y}`;
-  });
-}
-
 let isRefreshing = false;
 
 async function fetchUSGSEarthquakes() {
@@ -173,6 +172,152 @@ async function fetchUSGSEarthquakes() {
     console.error("[Automation] USGS Fetch failed:", e.message);
     return null;
   }
+}
+
+function cleanIfrcTitle(value) {
+  return String(value || "")
+    .replace(/^[A-Z]{3}:\s*/, "")
+    .replace(/\s+-\s+\d{2}-\d{4}\s+-\s+/i, " — ")
+    .replace(/^Other\s+—\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function plainTextFromHtml(value) {
+  if (!value) return "";
+  return cheerio.load(String(value)).text().replace(/\s+/g, " ").trim();
+}
+
+async function fetchIfrcVerifiedIncidents() {
+  const evidenceCutoff = Date.now() - HAZARD_RETENTION_MS;
+  const updatedAfter = new Date(evidenceCutoff).toISOString();
+  const eventParams = new URLSearchParams({
+    limit: "200",
+    ordering: "-updated_at",
+    updated_at__gte: updatedAfter,
+  });
+  try {
+    const [eventResponse, countryResponse] = await Promise.all([
+      fetchOfficial(`https://goadmin.ifrc.org/api/v2/event/?${eventParams}`),
+      fetchOfficial("https://goadmin.ifrc.org/api/v2/country/?limit=400"),
+    ]);
+    const [eventData, countryData] = await Promise.all([eventResponse.json(), countryResponse.json()]);
+    if (!Array.isArray(eventData.results) || !Array.isArray(countryData.results)) throw new Error("Invalid IFRC GO response.");
+    const countriesById = new Map(countryData.results.map(country => [Number(country.id), country]));
+    const features = [];
+
+    for (const event of eventData.results) {
+      const hazard = classifyIfrcHazard(event);
+      if (!hazard) continue;
+      const report = latestPublicFieldReport(event);
+      const narrative = plainTextFromHtml(report?.description || report?.summary || event.summary);
+      const impactCounts = extractIfrcImpactCounts(event, report);
+      if (!hasVerifiedIfrcImpact(impactCounts, narrative)) continue;
+
+      const eventCountries = (event.countries || [])
+        .map(country => countriesById.get(Number(country.id)) || country)
+        .filter(Boolean);
+      const primaryCountry = eventCountries.find(country => Array.isArray(country.centroid?.coordinates)) || null;
+      const coordinates = primaryCountry?.centroid?.coordinates?.map(Number);
+      if (!coordinates || coordinates.length < 2 || !coordinates.every(Number.isFinite)) continue;
+      const [lng, lat] = coordinates;
+      if (lng < BBOX[0] || lng > BBOX[2] || lat < BBOX[1] || lat > BBOX[3]) continue;
+
+      const countryNames = eventCountries.map(country => String(country.name || "").trim()).filter(Boolean);
+      const impacts = formatIfrcImpactCounts(impactCounts);
+      const narrativeSummary = summarizeIfrcNarrative(narrative);
+      const detectedAt = isoTimestamp(event.disaster_start_date || event.created_at);
+      const updatedAt = isoTimestamp(report?.updated_at || event.updated_at || event.created_at);
+      // The API can return older records even with updated_at__gte. Enforce the
+      // 15-day evidence lifecycle locally using the public report timestamp.
+      if (timestampOf(updatedAt) < evidenceCutoff) continue;
+      const severityLevel = String(event.ifrc_severity_level_display || "").trim();
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [lng, lat] },
+        properties: {
+          hazard,
+          severity: ifrcSeverity(event, impactCounts),
+          confidence: "confirmed",
+          title: cleanIfrcTitle(event.name) || `${hazard} emergency in ${countryNames.join(", ")}`,
+          notes: [
+            `Verified IFRC humanitarian field report${countryNames.length ? ` for ${countryNames.join(", ")}` : ""}.`,
+            impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
+            severityLevel ? `IFRC alert level: ${severityLevel}.` : "",
+            narrativeSummary,
+            `Location: country-level report; marker uses the ${primaryCountry?.name || "affected country"} centroid until a verified incident coordinate is available.`,
+          ].filter(Boolean).join(" "),
+          automated: true,
+          source: "ifrc_go",
+          sourceType: "verified humanitarian field report",
+          sourceUrl: `https://go.ifrc.org/emergencies/${event.id}`,
+          extId: `ifrc_${event.id}`,
+          ifrcEventId: Number(event.id),
+          ifrcImpactVerified: true,
+          countryNames,
+          countryCodes: eventCountries.map(country => country.iso3).filter(Boolean),
+          reportedImpacts: impactCounts,
+          providerSeverity: severityLevel || undefined,
+          locationEstimated: true,
+          detectedAt,
+          lastUpdatedAt: updatedAt,
+          createdAt: detectedAt,
+        },
+      });
+    }
+    return features;
+  } catch (error) {
+    console.error("[Automation] IFRC GO fetch failed:", error.message);
+    return null;
+  }
+}
+
+function incidentDate(feature) {
+  return timestampOf(feature?.properties?.detectedAt || feature?.properties?.createdAt);
+}
+
+function supportsIfrcIncident(ifrcFeature, supportingFeature) {
+  if (ifrcFeature?.properties?.hazard !== supportingFeature?.properties?.hazard) return false;
+  const ifrcDate = incidentDate(ifrcFeature);
+  const supportingDate = incidentDate(supportingFeature);
+  if (!Number.isFinite(ifrcDate) || !Number.isFinite(supportingDate) || Math.abs(ifrcDate - supportingDate) > 7 * 24 * 60 * 60 * 1000) return false;
+  const supportingText = `${supportingFeature.properties?.title || ""} ${supportingFeature.properties?.countries || ""}`.toLowerCase();
+  return (ifrcFeature.properties?.countryNames || []).some(country => supportingText.includes(String(country).toLowerCase()));
+}
+
+function correlateVerifiedIncidents(ifrcFeatures, usgsFeatures, copernicusFeatures) {
+  if (!Array.isArray(ifrcFeatures)) return { ifrcFeatures, copernicusFeatures };
+  const locationSources = [...(usgsFeatures || []), ...(copernicusFeatures || [])];
+  const matchedCopernicusIds = new Set();
+  for (const feature of ifrcFeatures) {
+    const matches = locationSources.filter(candidate => supportsIfrcIncident(feature, candidate));
+    for (const match of matches) {
+      if (match.properties?.source === "copernicus") matchedCopernicusIds.add(String(match.properties.extId));
+    }
+    const bestLocation = matches.sort((left, right) => {
+      if (feature.properties.hazard === "earthquake") {
+        const sourceDifference = Number(right.properties?.source === "usgs") - Number(left.properties?.source === "usgs");
+        if (sourceDifference) return sourceDifference;
+        return Number(right.properties?.magnitude || 0) - Number(left.properties?.magnitude || 0);
+      }
+      return Number(right.properties?.source === "copernicus") - Number(left.properties?.source === "copernicus");
+    })[0];
+    if (!bestLocation) continue;
+    feature.geometry = bestLocation.geometry;
+    feature.properties.locationEstimated = Boolean(bestLocation.properties?.locationEstimated);
+    const sourceName = bestLocation.properties?.source === "usgs" ? "USGS epicenter" : "Copernicus emergency activation";
+    feature.properties.notes = feature.properties.notes.replace(
+      /Location: country-level report; marker uses the .*? centroid until a verified incident coordinate is available\./,
+      `Location matched to the ${sourceName}.`,
+    );
+    feature.properties.supportingSourceUrl = bestLocation.properties?.sourceUrl;
+  }
+  return {
+    ifrcFeatures,
+    copernicusFeatures: Array.isArray(copernicusFeatures)
+      ? copernicusFeatures.filter(feature => !matchedCopernicusIds.has(String(feature.properties?.extId)))
+      : copernicusFeatures,
+  };
 }
 
 // Copernicus EMS rapid-mapping activations and AOI polygons.
@@ -233,6 +378,8 @@ async function fetchCopernicusEMS() {
         } catch (aoiErr) {
            console.warn(`[Automation] AOIs fetch skip for ${e.code}:`, aoiErr.message);
         }
+
+        if (!activationReason || !hasVerifiedIfrcImpact({}, activationReason)) continue;
 
         // AOI extents describe mapping coverage, not the hazard footprint. Use one
         // event marker so the map does not imply that the entire AOI is affected.
@@ -373,10 +520,23 @@ async function refreshAutomatedHazards() {
       }
     };
 
-    console.log("[Automation] Fetching significant earthquake data...");
+    console.log("[Automation] Fetching USGS PAGER data for incident corroboration...");
     const usgsFeatures = await fetchUSGSEarthquakes();
-    reconcileProviderSnapshot("usgs", usgsFeatures);
-    mergeProviderFeatures("usgs", usgsFeatures);
+    reconcileProviderSnapshot("usgs", []);
+    providerStatus.usgs = Array.isArray(usgsFeatures)
+      ? {
+          status: "supporting-only",
+          lastAttemptAt: new Date().toISOString(),
+          lastSuccessAt: new Date().toISOString(),
+          itemCount: usgsFeatures.length,
+          message: `${usgsFeatures.length} PAGER impact alert${usgsFeatures.length === 1 ? "" : "s"} available only to corroborate verified incidents.`,
+        }
+      : {
+          ...(providerStatus.usgs || {}),
+          status: "error",
+          lastAttemptAt: new Date().toISOString(),
+          message: "USGS corroboration failed; it does not create public incidents independently.",
+        };
 
     providerStatus.nasa_firms = {
       status: "supporting-only",
@@ -396,143 +556,23 @@ async function refreshAutomatedHazards() {
       itemCount: 0,
       message: "The aggregate cluster endpoint lacks stable incident-level impact evidence.",
     };
+    providerStatus.gdacs = {
+      status: "supporting-only",
+      lastAttemptAt: new Date().toISOString(),
+      itemCount: 0,
+      message: "GDACS modelled alerts do not independently prove observed harm and are not public incidents.",
+    };
+    reconcileProviderSnapshot("gdacs", []);
 
     console.log("[Automation] Fetching Copernicus EMS activations...");
     const copernicusFeatures = await fetchCopernicusEMS();
-    reconcileProviderSnapshot("copernicus", copernicusFeatures);
-    mergeProviderFeatures("copernicus", copernicusFeatures);
-
-    try {
-      const gdacsUrl = "https://www.gdacs.org/xml/rss.xml";
-      const resp = await fetchOfficial(gdacsUrl, { headers: { Accept: "application/xml, text/xml" } });
-      {
-        providerStatus.gdacs = {
-          status: "healthy",
-          lastAttemptAt: new Date().toISOString(),
-          lastSuccessAt: new Date().toISOString(),
-          message: "The GDACS feed was refreshed successfully.",
-        };
-        const xml = await resp.text();
-        const $xml = cheerio.load(xml, { xmlMode: true });
-        const items = $xml("item").toArray();
-        for (const el of items) {
-          const title = $xml(el).find("title").text();
-          let latStr = $xml(el).find("gdacs\\:lat").text() || $xml(el).find("lat").first().text() || $xml(el).find("geo\\:lat").text();
-          let lngStr = $xml(el).find("gdacs\\:long").text() || $xml(el).find("long").first().text() || $xml(el).find("geo\\:long").text();
-          const georss = $xml(el).find("georss\\:point").text();
-          if ((!latStr || !lngStr) && georss) {
-            const parts = georss.trim().split(/\s+/);
-            latStr = parts[0]; lngStr = parts[1];
-          }
-          const lat = parseFloat(latStr);
-          const lng = parseFloat(lngStr);
-
-          const gdacsType = $xml(el).find("gdacs\\:eventtype").text()?.toLowerCase() || "";
-          const alertLevel = ($xml(el).find("gdacs\\:alertlevel").text() || "green").toLowerCase();
-          const severityElement = $xml(el).find("gdacs\\:severity").first();
-          const populationElement = $xml(el).find("gdacs\\:population").first();
-          const burnedArea = Number(severityElement.attr("value")) || 0;
-          const affectedPopulation = Number(populationElement.attr("value")) || 0;
-          const providerSeverity = severityElement.text().replace(/\s+/g, " ").trim();
-          const providerActive = $xml(el).find("gdacs\\:iscurrent").text().toLowerCase() !== "false";
-          const fromDate = $xml(el).find("gdacs\\:fromdate").text() || "";
-          const toDate = $xml(el).find("gdacs\\:todate").text() || "";
-          const modifiedDate = $xml(el).find("gdacs\\:datemodified").text() || "";
-          const eventid = $xml(el).find("gdacs\\:eventid").text() || "";
-          if (title && eventid && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
-            const extId = `gdacs_${gdacsType}_${eventid}`;
-            if (!isActionableGdacsEvent({ providerActive, alertLevel })) continue;
-            const categoryMap = { "eq": "earthquake", "tc": "storm", "fl": "flood", "wf": "fire", "vo": "volcano", "ls": "landslide", "dr": "drought", "hw": "heatwave" };
-            const hazardType = categoryMap[gdacsType] || "other";
-            const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
-            const fullDesc = ($xml(el).find("description").text() || "").replace(/^(Green|Orange|Red)\s+/i, "").trim();
-            const cleanDesc = fullDesc.replace(/^On\s+[A-Z][a-z]{2}\s+\d{1,2}.*?started.*?(until|to)\s+.*?\./i, "").replace(/\s+/g, " ").trim();
-            let impactLabel = "Minor";
-            if (alertLevel === "orange") impactLabel = "Moderate";
-            if (alertLevel === "red") impactLabel = "Significant";
-            const gdacsSource = `https://www.gdacs.org/report.aspx?eventid=${eventid}&eventtype=${gdacsType.toUpperCase()}`;
-            const geometry = { type: "Point", coordinates: [lng, lat] };
-            const deaths = fullDesc.match(/(?:caused|reported)\s+(\d+)\s+deaths?/i)?.[1];
-            const displaced = fullDesc.match(/(\d+)\s+displaced/i)?.[1];
-            const affected = fullDesc.match(/(\d+)\s+affected/i)?.[1];
-            const impacts = [];
-            if (deaths !== undefined) impacts.push(Number(deaths) === 0 ? "no deaths reported" : `${deaths} deaths reported`);
-            if (displaced !== undefined) impacts.push(`${displaced} people displaced`);
-            if (affected !== undefined) impacts.push(`${affected} people affected`);
-            const eventDate = Number.isNaN(new Date(fromDate).getTime())
-              ? ""
-              : new Date(fromDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-            const lastDetectionDate = Number.isNaN(new Date(toDate).getTime())
-              ? ""
-              : new Date(toDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-            const wildfireDetails = gdacsType === "wf"
-              ? [lastDetectionDate ? `Last satellite detection: ${lastDetectionDate}.` : "", burnedArea ? `Estimated burned area: ${Math.round(burnedArea).toLocaleString("en-US")} ha.` : ""]
-              : [];
-            const summary = [
-              `${impactLabel} (${alertLevel.toUpperCase()}) GDACS humanitarian-impact alert.`,
-              eventDate ? `Event date: ${eventDate}.` : "",
-              ...wildfireDetails,
-              affectedPopulation ? `Estimated population exposure: ${Math.round(affectedPopulation).toLocaleString("en-US")}.` : "",
-              impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
-              providerSeverity,
-              gdacsType === "wf" || gdacsType === "eq" ? "" : cleanDesc,
-            ]
-              .filter(Boolean).join(" ");
-
-            const checkedAt = new Date().toISOString();
-            const feature = {
-              type: "Feature",
-              properties: {
-                hazard: hazardType,
-                severity: impactLabel.toLowerCase(),
-                title: cleanTitle,
-                confidence: "confirmed",
-                notes: summary,
-                automated: true,
-                source: "gdacs",
-                sourceType: "official disaster alert",
-                sourceUrl: gdacsSource,
-                gdacsId: extId,
-                extId: extId,
-                eventDate: fromDate,
-                detectedAt: fromDate || new Date().toISOString(),
-                lastDetectionAt: toDate || undefined,
-                lastUpdatedAt: modifiedDate || toDate || fromDate || new Date().toISOString(),
-                createdAt: fromDate || checkedAt,
-                lastSeenAt: checkedAt,
-                providerActive: true,
-                alertLevel,
-                affectedPopulation,
-                burnedArea: gdacsType === "wf" ? burnedArea : undefined
-              },
-              geometry: geometry
-            };
-            const existingIdx = externalIdIndex.get(extId) ?? -1;
-            feature.properties.firstSeenAt = existingIdx > -1
-              ? hazards.features[existingIdx].properties.firstSeenAt || hazards.features[existingIdx].properties.detectedAt
-              : feature.properties.detectedAt;
-            if (existingIdx > -1) { hazards.features[existingIdx] = feature; updatedCount++; }
-            else {
-              externalIdIndex.set(extId, hazards.features.length);
-              hazards.features.push(feature);
-              addedCount++;
-            }
-          }
-        }
-        providerStatus.gdacs.itemCount = items.length;
-        providerStatus.gdacs.message = `${items.length} current feed item${items.length === 1 ? "" : "s"} received.`;
-      }
-    } catch (e) {
-      cycleFailed = true;
-      const checkedAt = new Date().toISOString();
-      providerStatus.gdacs = {
-        ...(providerStatus.gdacs || {}),
-        status: "error",
-        lastAttemptAt: checkedAt,
-        message: `GDACS refresh failed: ${e.message}`,
-      };
-      console.warn("[Automation] GDACS fetch failed, keeping old data.");
-    }
+    console.log("[Automation] Fetching verified IFRC humanitarian incidents...");
+    const rawIfrcFeatures = await fetchIfrcVerifiedIncidents();
+    const correlated = correlateVerifiedIncidents(rawIfrcFeatures, usgsFeatures, copernicusFeatures);
+    if (Array.isArray(correlated.ifrcFeatures)) reconcileProviderSnapshot("ifrc_go", correlated.ifrcFeatures);
+    mergeProviderFeatures("ifrc_go", correlated.ifrcFeatures);
+    if (Array.isArray(correlated.copernicusFeatures)) reconcileProviderSnapshot("copernicus", correlated.copernicusFeatures);
+    mergeProviderFeatures("copernicus", correlated.copernicusFeatures);
 
     const initialCount = hazards.features.length;
     hazards.features = hazards.features.filter((feature) =>

@@ -11,10 +11,11 @@ test("every impact-backed hazard provider is connected to the refresh cycle", ()
   for (const call of [
     "await fetchUSGSEarthquakes()",
     "await fetchCopernicusEMS()",
+    "await fetchIfrcVerifiedIncidents()",
   ]) {
     assert.ok(source.includes(call), `automation refresh is missing ${call}`);
   }
-  assert.ok(source.includes("www.gdacs.org/xml/rss.xml"), "automation refresh is missing GDACS");
+  assert.doesNotMatch(source, /www\.gdacs\.org\/xml\/rss\.xml/);
   assert.doesNotMatch(source, /fetchNASAFires|fetchNASAEonet|fetchRSOEEDIS/);
   assert.match(source, /Raw thermal pixels are not public incidents/);
   assert.match(source, /aggregate cluster endpoint lacks stable incident-level impact evidence/);
@@ -27,25 +28,23 @@ test("provider evidence renews the 15-day hazard lifecycle", () => {
   assert.doesNotMatch(source, /reconcileProviderSnapshot\("nasa_eonet"/);
 });
 
-test("GDACS retains only orange and red impact alerts and labels wildfire dates accurately", () => {
+test("IFRC publishes only recent field reports with observed impact evidence", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
-  assert.match(source, /gdacs\\\\:iscurrent/);
-  assert.match(source, /gdacs\\\\:todate/);
-  assert.match(source, /gdacs\\\\:alertlevel/);
-  assert.match(source, /isActionableGdacsEvent/);
-  assert.match(source, /alertLevel,/);
-  assert.match(source, /Estimated population exposure:/);
-  assert.match(source, /Last satellite detection:/);
-  assert.match(source, /gdacsType === "wf" \|\| gdacsType === "eq" \? "" : cleanDesc/);
-  assert.doesNotMatch(source, /const cleanDesc = formatDateString/);
-  assert.doesNotMatch(source, /currentGdacsIds/);
+  assert.match(source, /updated_at__gte: updatedAfter/);
+  assert.match(source, /timestampOf\(updatedAt\) < evidenceCutoff/);
+  assert.match(source, /latestPublicFieldReport\(event\)/);
+  assert.match(source, /hasVerifiedIfrcImpact\(impactCounts, narrative\)/);
+  assert.match(source, /source: "ifrc_go"/);
+  assert.match(source, /sourceType: "verified humanitarian field report"/);
+  assert.match(source, /ifrcImpactVerified: true/);
 });
 
-test("USGS uses a rolling 15-day PAGER impact query", () => {
+test("USGS uses a rolling PAGER query only to corroborate verified incidents", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /minalertlevel: "yellow"/);
   assert.match(source, /starttime: startTime/);
-  assert.match(source, /reconcileProviderSnapshot\("usgs", usgsFeatures\)/);
+  assert.match(source, /reconcileProviderSnapshot\("usgs", \[\]\)/);
+  assert.doesNotMatch(source, /mergeProviderFeatures\("usgs"/);
   assert.match(source, /USGS PAGER impact alert:/);
   assert.doesNotMatch(source, /summary\/all_day\.geojson/);
 });
@@ -84,5 +83,6 @@ test("Copernicus descriptions prefer the complete activation reason", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /activationInfo\?\.reason/);
   assert.match(source, /const providerSummary = activationReason \|\|/);
+  assert.match(source, /!activationReason \|\| !hasVerifiedIfrcImpact\(\{\}, activationReason\)/);
   assert.doesNotMatch(source, /replace\(\/\\\.\\\.\\\.\$\/, "\\\."\)/);
 });
