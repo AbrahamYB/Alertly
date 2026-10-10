@@ -222,6 +222,18 @@ async function fetchIfrcVerifiedIncidents() {
     const [eventData, countryData] = await Promise.all([eventResponse.json(), countryResponse.json()]);
     if (!Array.isArray(eventData.results) || !Array.isArray(countryData.results)) throw new Error("Invalid IFRC GO response.");
     const countriesById = new Map(countryData.results.map(country => [Number(country.id), country]));
+    const districtRequests = new Map();
+    const fetchDistrict = async id => {
+      if (!districtRequests.has(id)) {
+        districtRequests.set(id, fetchOfficial(`https://goadmin.ifrc.org/api/v2/district/${id}/`)
+          .then(response => response.json())
+          .catch(error => {
+            console.warn(`[Automation] IFRC district ${id} location unavailable:`, error.message);
+            return null;
+          }));
+      }
+      return districtRequests.get(id);
+    };
     const features = [];
 
     for (const event of eventData.results) {
@@ -236,12 +248,34 @@ async function fetchIfrcVerifiedIncidents() {
         .map(country => countriesById.get(Number(country.id)) || country)
         .filter(Boolean);
       const primaryCountry = eventCountries.find(country => Array.isArray(country.centroid?.coordinates)) || null;
-      const coordinates = primaryCountry?.centroid?.coordinates?.map(Number);
+      let districtReferences = event.districts || [];
+      if (!districtReferences.length && event.id) {
+        try {
+          const detailResponse = await fetchOfficial(`https://goadmin.ifrc.org/api/v2/event/${event.id}/`);
+          const eventDetail = await detailResponse.json();
+          districtReferences = eventDetail.districts || [];
+        } catch (error) {
+          console.warn(`[Automation] IFRC event ${event.id} district list unavailable:`, error.message);
+        }
+      }
+      const eventDistricts = (await Promise.all(districtReferences
+        .map(district => Number(district.id))
+        .filter(Number.isFinite)
+        .map(fetchDistrict)))
+        .filter(district => Array.isArray(district?.centroid?.coordinates));
+      const districtCoordinates = eventDistricts.map(district => district.centroid.coordinates.map(Number));
+      const coordinates = districtCoordinates.length
+        ? [
+            districtCoordinates.reduce((sum, point) => sum + point[0], 0) / districtCoordinates.length,
+            districtCoordinates.reduce((sum, point) => sum + point[1], 0) / districtCoordinates.length,
+          ]
+        : primaryCountry?.centroid?.coordinates?.map(Number);
       if (!coordinates || coordinates.length < 2 || !coordinates.every(Number.isFinite)) continue;
       const [lng, lat] = coordinates;
       if (lng < BBOX[0] || lng > BBOX[2] || lat < BBOX[1] || lat > BBOX[3]) continue;
 
       const countryNames = eventCountries.map(country => String(country.name || "").trim()).filter(Boolean);
+      const districtNames = eventDistricts.map(district => String(district.name || "").trim()).filter(Boolean);
       const impacts = formatIfrcImpactCounts(impactCounts);
       const narrativeSummary = summarizeIfrcNarrative(narrative);
       const detectedAt = isoTimestamp(event.disaster_start_date || event.created_at);
@@ -263,7 +297,9 @@ async function fetchIfrcVerifiedIncidents() {
             impacts.length ? `Reported impact: ${impacts.join("; ")}.` : "",
             severityLevel ? `IFRC alert level: ${severityLevel}.` : "",
             narrativeSummary,
-            `Location: country-level report; marker uses the ${primaryCountry?.name || "affected country"} centroid until a verified incident coordinate is available.`,
+            districtNames.length
+              ? `Location: center of the IFRC-reported district${districtNames.length === 1 ? "" : "s"}: ${districtNames.join(", ")}.`
+              : `Location: country-level report; marker uses the ${primaryCountry?.name || "affected country"} centroid until a verified incident coordinate is available.`,
           ].filter(Boolean).join(" "),
           automated: true,
           source: "ifrc_go",
@@ -274,6 +310,7 @@ async function fetchIfrcVerifiedIncidents() {
           ifrcImpactVerified: true,
           countryNames,
           countryCodes: eventCountries.map(country => country.iso3).filter(Boolean),
+          districtNames,
           reportedImpacts: impactCounts,
           providerSeverity: severityLevel || undefined,
           locationEstimated: true,
@@ -387,7 +424,7 @@ function correlateVerifiedIncidents(ifrcFeatures, usgsFeatures, copernicusFeatur
     feature.properties.locationEstimated = Boolean(bestLocation.properties?.locationEstimated);
     const sourceName = bestLocation.properties?.source === "usgs" ? "USGS epicenter" : "Copernicus emergency activation";
     feature.properties.notes = feature.properties.notes.replace(
-      /Location: country-level report; marker uses the .*? centroid until a verified incident coordinate is available\./,
+      /Location: [^.]+\./,
       `Location matched to the ${sourceName}.`,
     );
     feature.properties.supportingSourceUrl = bestLocation.properties?.sourceUrl;

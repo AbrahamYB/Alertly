@@ -35,6 +35,8 @@ test("IFRC publishes only recent field reports with observed impact evidence", (
   assert.match(source, /updated_at__gte: updatedAfter/);
   assert.match(source, /timestampOf\(updatedAt\) < evidenceCutoff/);
   assert.match(source, /latestPublicFieldReport\(event\)/);
+  assert.match(source, /api\/v2\/district\/\$\{id\}\//);
+  assert.match(source, /districtNames/);
   assert.match(source, /hasVerifiedIfrcImpact\(impactCounts, narrative\)/);
   assert.match(source, /source: "ifrc_go"/);
   assert.match(source, /sourceType: "verified humanitarian field report"/);
