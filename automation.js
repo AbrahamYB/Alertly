@@ -5,7 +5,8 @@ import fs from "fs";
 import { featureInHazardRegion, getHazardBbox } from "./lib/hazard-region.js";
 import { nextScheduledTime, parseDailyTimes } from "./lib/fixed-schedule.js";
 import { replaceFileSync } from "./lib/file-utils.js";
-import { isDeprecatedHazardFeature } from "./lib/domain.js";
+import { isDeprecatedHazardFeature, isHazardCurrent } from "./lib/domain.js";
+import { isPublicGdacsEvent } from "./lib/gdacs-policy.js";
 import { resolveCopernicusEventLocation } from "./lib/hazard-location.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,11 +45,7 @@ function isoTimestamp(value, fallback = Date.now()) {
 
 function isRecentProviderFeature(feature, now = Date.now()) {
   if (!feature?.properties?.automated) return true;
-  const properties = feature.properties;
-  const timestamp = timestampOf(
-    properties.lastSeenAt || properties.lastUpdatedAt || properties.detectedAt || properties.eventDate || properties.createdAt
-  );
-  return !Number.isFinite(timestamp) || now - timestamp < HAZARD_RETENTION_MS;
+  return isHazardCurrent(feature, now, HAZARD_RETENTION_MS);
 }
 
 function isFirmsHotspotFeature(feature) {
@@ -216,25 +213,27 @@ async function fetchNASAFires() {
 
 // NASA EONET open natural events.
 async function fetchNASAEonet() {
-  const url = `https://eonet.gsfc.nasa.gov/api/v3/events?bbox=${BBOX[0]},${BBOX[3]},${BBOX[2]},${BBOX[1]}&status=open&days=30&limit=100`;
+  const url = `https://eonet.gsfc.nasa.gov/api/v3/events?bbox=${BBOX[0]},${BBOX[3]},${BBOX[2]},${BBOX[1]}&status=open&limit=500`;
   try {
     const resp = await fetchOfficial(url);
     const data = await resp.json();
-    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
     return (data.events || []).map(e => {
       // EONET appends geometries over time; the last entry is the current one.
       const latestGeo = e.geometry[e.geometry.length - 1];
-      const eventTimestamp = new Date(latestGeo?.date || 0).getTime();
-      if (!Number.isFinite(eventTimestamp) || eventTimestamp < cutoff) return null;
+      if (!latestGeo) return null;
       const category = (e.categories?.[0]?.id || "other").toLowerCase();
       
       const categoryMap = {
          "wildfires": "fire",
          "volcanoes": "volcano",
-         "severe storms": "storm",
+         "severestorms": "storm",
          "floods": "flood",
-         "sea and lake ice": "other",
-         "dust and haze": "other"
+         "landslides": "landslide",
+         "drought": "drought",
+         "earthquakes": "earthquake",
+         "tempextremes": "heatwave",
+         "sealakeice": "other",
+         "dusthaze": "other"
       };
 
       return {
@@ -433,15 +432,31 @@ async function refreshAutomatedHazards() {
 
     const hazards = getHazards();
     const externalIdIndex = new Map();
-    hazards.features.forEach((hazard, index) => {
-      const externalId = hazard.properties?.extId;
-      if (externalId !== undefined && externalId !== null && externalId !== "") {
-        const key = String(externalId);
-        if (!externalIdIndex.has(key)) externalIdIndex.set(key, index);
-      }
-    });
+    const rebuildExternalIdIndex = () => {
+      externalIdIndex.clear();
+      hazards.features.forEach((hazard, index) => {
+        const externalId = hazard.properties?.extId;
+        if (externalId !== undefined && externalId !== null && externalId !== "") {
+          const key = String(externalId);
+          if (!externalIdIndex.has(key)) externalIdIndex.set(key, index);
+        }
+      });
+    };
+    rebuildExternalIdIndex();
     let addedCount = 0;
     let updatedCount = 0;
+    let providerRemovedCount = 0;
+
+    const reconcileProviderSnapshot = (source, features) => {
+      if (!Array.isArray(features)) return;
+      const currentIds = new Set(features.map(feature => String(feature.properties?.extId || "")).filter(Boolean));
+      const previousCount = hazards.features.length;
+      hazards.features = hazards.features.filter(feature =>
+        feature.properties?.source !== source || currentIds.has(String(feature.properties?.extId || ""))
+      );
+      providerRemovedCount += previousCount - hazards.features.length;
+      rebuildExternalIdIndex();
+    };
 
     const mergeProviderFeatures = (providerId, features) => {
       const checkedAt = new Date().toISOString();
@@ -501,7 +516,9 @@ async function refreshAutomatedHazards() {
     }
 
     console.log("[Automation] Fetching NASA Observatory events (EONET)...");
-    mergeProviderFeatures("nasa_eonet", await fetchNASAEonet());
+    const eonetFeatures = await fetchNASAEonet();
+    reconcileProviderSnapshot("nasa_eonet", eonetFeatures);
+    mergeProviderFeatures("nasa_eonet", eonetFeatures);
 
     console.log("[Automation] Fetching RSOE EDIS events...");
     mergeProviderFeatures("rsoe_edis", await fetchRSOEEDIS());
@@ -522,6 +539,7 @@ async function refreshAutomatedHazards() {
         const xml = await resp.text();
         const $xml = cheerio.load(xml, { xmlMode: true });
         const items = $xml("item").toArray();
+        const currentGdacsIds = new Set();
 
         for (const el of items) {
           const title = $xml(el).find("title").text();
@@ -536,19 +554,28 @@ async function refreshAutomatedHazards() {
           const lng = parseFloat(lngStr);
 
           const gdacsType = $xml(el).find("gdacs\\:eventtype").text()?.toLowerCase() || "";
-          const severity = $xml(el).find("gdacs\\:severity").text() || "medium";
+          const alertLevel = ($xml(el).find("gdacs\\:alertlevel").text() || "green").toLowerCase();
+          const severityElement = $xml(el).find("gdacs\\:severity").first();
+          const populationElement = $xml(el).find("gdacs\\:population").first();
+          const burnedArea = Number(severityElement.attr("value")) || 0;
+          const affectedPopulation = Number(populationElement.attr("value")) || 0;
+          const providerActive = $xml(el).find("gdacs\\:iscurrent").text().toLowerCase() !== "false";
           const fromDate = $xml(el).find("gdacs\\:fromdate").text() || "";
+          const toDate = $xml(el).find("gdacs\\:todate").text() || "";
+          const modifiedDate = $xml(el).find("gdacs\\:datemodified").text() || "";
           const eventid = $xml(el).find("gdacs\\:eventid").text() || "";
-          if (title && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
+          if (title && eventid && !isNaN(lat) && !isNaN(lng) && lng >= BBOX[0] && lng <= BBOX[2] && lat >= BBOX[1] && lat <= BBOX[3]) {
             const extId = `gdacs_${gdacsType}_${eventid}`;
+            if (!isPublicGdacsEvent({ eventType: gdacsType, providerActive, alertLevel, burnedArea, affectedPopulation })) continue;
+            currentGdacsIds.add(extId);
             const categoryMap = { "eq": "earthquake", "tc": "storm", "fl": "flood", "wf": "fire", "vo": "volcano", "ls": "landslide", "dr": "drought", "hw": "heatwave" };
             const hazardType = categoryMap[gdacsType] || "other";
             const cleanTitle = formatDateString(title.replace(/^(Green|Orange|Red)\s+(notification for\s+)?/i, "").trim());
             const fullDesc = ($xml(el).find("description").text() || "").replace(/^(Green|Orange|Red)\s+/i, "").trim();
             const cleanDesc = formatDateString(fullDesc.replace(/^On\s+[A-Z][a-z]{2}\s+\d{1,2}.*?started.*?(until|to)\s+.*?\./i, "").trim());
             let impactLabel = "Minor";
-            if (severity.toLowerCase() === "orange") impactLabel = "Moderate";
-            if (severity.toLowerCase() === "red") impactLabel = "Significant";
+            if (alertLevel === "orange") impactLabel = "Moderate";
+            if (alertLevel === "red") impactLabel = "Significant";
             const gdacsSource = `https://www.gdacs.org/report.aspx?eventid=${eventid}&eventtype=${gdacsType.toUpperCase()}`;
             const geometry = { type: "Point", coordinates: [lng, lat] };
             const deaths = fullDesc.match(/(?:caused|reported)\s+(\d+)\s+deaths?/i)?.[1];
@@ -561,7 +588,13 @@ async function refreshAutomatedHazards() {
             const eventDate = Number.isNaN(new Date(fromDate).getTime())
               ? ""
               : new Date(fromDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-            const summary = [`${impactLabel} GDACS alert.`, eventDate ? `Event date: ${eventDate}.` : "", impacts.length ? `Reported impact: ${impacts.join("; ")}.` : cleanDesc]
+            const lastDetectionDate = Number.isNaN(new Date(toDate).getTime())
+              ? ""
+              : new Date(toDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+            const wildfireDetails = gdacsType === "wf"
+              ? [lastDetectionDate ? `Last satellite detection: ${lastDetectionDate}.` : "", burnedArea ? `Estimated burned area: ${Math.round(burnedArea).toLocaleString("en-US")} ha.` : ""]
+              : [];
+            const summary = [`${impactLabel} GDACS alert.`, eventDate ? `Event date: ${eventDate}.` : "", ...wildfireDetails, impacts.length ? `Reported impact: ${impacts.join("; ")}.` : gdacsType === "wf" ? "" : cleanDesc]
               .filter(Boolean).join(" ");
 
             const checkedAt = new Date().toISOString();
@@ -581,9 +614,11 @@ async function refreshAutomatedHazards() {
                 extId: extId,
                 eventDate: fromDate,
                 detectedAt: fromDate || new Date().toISOString(),
-                lastUpdatedAt: fromDate || new Date().toISOString(),
+                lastDetectionAt: toDate || undefined,
+                lastUpdatedAt: modifiedDate || toDate || fromDate || new Date().toISOString(),
                 createdAt: fromDate || checkedAt,
-                lastSeenAt: checkedAt
+                lastSeenAt: checkedAt,
+                providerActive: true
               },
               geometry: geometry
             };
@@ -599,6 +634,14 @@ async function refreshAutomatedHazards() {
             }
           }
         }
+        const beforeReconciliation = hazards.features.length;
+        hazards.features = hazards.features.filter(feature =>
+          feature.properties?.source !== "gdacs" || currentGdacsIds.has(String(feature.properties?.extId || ""))
+        );
+        providerRemovedCount += beforeReconciliation - hazards.features.length;
+        rebuildExternalIdIndex();
+        providerStatus.gdacs.itemCount = currentGdacsIds.size;
+        providerStatus.gdacs.message = `${currentGdacsIds.size} current public event${currentGdacsIds.size === 1 ? "" : "s"} received.`;
       }
     } catch (e) {
       cycleFailed = true;
@@ -616,7 +659,7 @@ async function refreshAutomatedHazards() {
     hazards.features = hazards.features.filter((feature) =>
       !isDeprecatedHazardFeature(feature) && isRecentProviderFeature(feature)
     );
-    const removedCount = initialCount - hazards.features.length;
+    const removedCount = providerRemovedCount + initialCount - hazards.features.length;
 
     if (addedCount > 0 || updatedCount > 0 || removedCount > 0) {
       saveHazards(hazards);
@@ -656,4 +699,8 @@ function scheduleNextHazardRefresh(from = new Date()) {
   }, delay);
 }
 
-scheduleNextHazardRefresh();
+if (process.argv.includes("--refresh-once")) {
+  await refreshAutomatedHazards();
+} else {
+  scheduleNextHazardRefresh();
+}

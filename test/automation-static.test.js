@@ -24,7 +24,26 @@ test("provider evidence renews the 15-day hazard lifecycle", () => {
   const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
   assert.match(source, /HAZARD_RETENTION_MS = 15 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(source, /feature\.properties\.lastSeenAt = checkedAt/);
-  assert.doesNotMatch(source, /seenExtIds/, "one missing provider response must not remove a hazard before its lifecycle expires");
+  assert.match(source, /reconcileProviderSnapshot\("nasa_eonet", eonetFeatures\)/);
+});
+
+test("GDACS exposes only current public-impact events and labels wildfire dates accurately", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  const policy = fs.readFileSync(path.join(projectRoot, "lib", "gdacs-policy.js"), "utf8");
+  assert.match(source, /gdacs\\\\:iscurrent/);
+  assert.match(source, /gdacs\\\\:todate/);
+  assert.match(source, /gdacs\\\\:alertlevel/);
+  assert.match(source, /isPublicGdacsEvent/);
+  assert.match(policy, /burnedArea >= 10000 && affectedPopulation >= 10000/);
+  assert.match(source, /Last satellite detection:/);
+  assert.match(source, /currentGdacsIds\.has/);
+});
+
+test("operators can run one immediate refresh without changing the fixed schedule", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "automation.js"), "utf8");
+  assert.match(source, /process\.argv\.includes\("--refresh-once"\)/);
+  assert.match(source, /await refreshAutomatedHazards\(\)/);
+  assert.match(source, /scheduleNextHazardRefresh\(\)/);
 });
 
 test("large provider refreshes use indexed external ID lookups", () => {
