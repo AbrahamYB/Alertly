@@ -60,7 +60,10 @@
       height: 100%;
       width: 100%;
       z-index: 0;
+      background: #0b3444;
     }
+
+    .leaflet-container { background: #0b3444; }
 
     .glass {
       background:
@@ -1067,15 +1070,66 @@ scroll-behavior: auto !important;
       updateWhenZooming: false,
       keepBuffer: 2
     };
-    const satelliteImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    const RetainedTileLayer = L.TileLayer.extend({
+      options: {
+        retainedTileLimit: 160,
+        retainedZoomLevels: 2
+      },
+      _pruneTiles() {
+        if (!this._map) return;
+        const tileZoom = this._tileZoom;
+        const retainedZoomLevels = Number(this.options.retainedZoomLevels) || 0;
+        const retainedTileLimit = Math.max(32, Number(this.options.retainedTileLimit) || 160);
+        const entries = Object.entries(this._tiles);
+
+        for (const [, tile] of entries) {
+          const nearbyZoom = Number.isFinite(tileZoom)
+            && Math.abs(tile.coords.z - tileZoom) <= retainedZoomLevels;
+          tile.retain = Boolean(tile.current || (tile.loaded && nearbyZoom));
+        }
+
+        const retained = entries.filter(([, tile]) => tile.retain);
+        if (retained.length > retainedTileLimit) {
+          const removable = retained
+            .filter(([, tile]) => !tile.current)
+            .sort((left, right) => {
+              const zoomDifference = Math.abs(right[1].coords.z - tileZoom) - Math.abs(left[1].coords.z - tileZoom);
+              return zoomDifference || Number(left[1].loaded || 0) - Number(right[1].loaded || 0);
+            });
+          let excess = retained.length - retainedTileLimit;
+          for (const [key, tile] of removable) {
+            if (excess <= 0) break;
+            tile.retain = false;
+            excess -= 1;
+          }
+        }
+
+        for (const [key, tile] of Object.entries(this._tiles)) {
+          if (!tile.retain) this._removeTile(key);
+        }
+      }
+    });
+    const retainedTileLayer = (url, options) => new RetainedTileLayer(url, options);
+    const satelliteUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+    const satelliteFallback = retainedTileLayer(satelliteUrl, {
+      ...tileLoadingOptions,
+      className: "satellite-fallback-layer",
+      keepBuffer: 4,
+      maxNativeZoom: 4,
+      maxZoom: 19,
+      retainedTileLimit: 80,
+      retainedZoomLevels: 0,
+      attribution: "Tiles &copy; Esri"
+    });
+    const satelliteImagery = retainedTileLayer(satelliteUrl, {
       ...tileLoadingOptions,
       attribution: "Tiles &copy; Esri &mdash; Source: i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community"
     });
-    const satelliteLabels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+    const satelliteLabels = retainedTileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
       ...tileLoadingOptions,
       attribution: "Labels &copy; Esri"
     });
-    const satelliteLayer = L.layerGroup([satelliteImagery]);
+    const satelliteLayer = L.layerGroup([satelliteFallback, satelliteImagery]);
     const enableSatelliteLabels = () => {
       if (!satelliteLayer.hasLayer(satelliteLabels)) satelliteLayer.addLayer(satelliteLabels);
     };
@@ -1083,12 +1137,12 @@ scroll-behavior: auto !important;
     setTimeout(enableSatelliteLabels, 2500);
 
     const baseLayers = {
-      osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      osm: retainedTileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         ...tileLoadingOptions,
         attribution: "© OpenStreetMap contributors",
       }),
       satellite: satelliteLayer,
-      terrain: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+      terrain: retainedTileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
         ...tileLoadingOptions,
         attribution: "Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community",
       })

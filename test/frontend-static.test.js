@@ -90,6 +90,9 @@ test("every hazard surface uses the shared icon taxonomy", () => {
   assert.ok(home.includes('class="hazard-popup__meta-row"><b>Event date:</b>'));
   assert.ok(home.includes('const query = `types=${encodeURIComponent(enabledTypes.join(","))}`'));
   assert.ok(!home.includes('map.on("moveend zoomend"'), "zooming must not discard and reload the global hazard set");
+  assert.ok(home.includes("const RetainedTileLayer = L.TileLayer.extend"));
+  assert.ok(home.includes("retainedTileLimit: 160"));
+  assert.ok(home.includes("maxNativeZoom: 4"), "satellite mode needs a low-resolution fallback beneath detailed tiles");
 
   const reports = readPage("report.html");
   assert.ok(reports.includes("const categoryId = AlertlyHazards.normalize(data.type)"));
