@@ -75,13 +75,18 @@ test("every hazard surface uses the shared icon taxonomy", () => {
   vm.createContext(context);
   vm.runInContext(readPage("hazard-ui.js"), context);
   const taxonomy = context.AlertlyHazards;
-  assert.equal(taxonomy.iconFor("earthquake"), "🫨");
-  assert.notEqual(taxonomy.iconFor("earthquake"), "⚡");
+  assert.equal(taxonomy.iconFor("earthquake"), "/assets/hazards/earthquake.svg");
+  assert.notEqual(taxonomy.iconFor("earthquake"), "/assets/hazards/lightning-storm.svg");
   assert.equal(taxonomy.normalize("lightning storm"), "storm");
-  assert.equal(taxonomy.iconFor("storm", "severe lightning and thunder"), "⛈️");
-  assert.equal(taxonomy.iconFor("tornado"), "🌪️");
+  assert.equal(taxonomy.iconFor("storm", "severe lightning and thunder"), "/assets/hazards/lightning-storm.svg");
+  assert.equal(taxonomy.iconFor("tornado"), "/assets/hazards/storm.svg");
+  assert.match(taxonomy.iconMarkupFor("flood"), /<img[^>]+flood\.svg/);
   assert.equal(taxonomy.normalize("storm surge"), "flood");
   assert.equal(new Set(taxonomy.categories.map(category => category.icon)).size, taxonomy.categories.length);
+  for (const category of taxonomy.categories) {
+    assert.ok(fs.existsSync(path.join(projectRoot, category.icon)), `${category.id} must have a bundled SVG icon`);
+  }
+  assert.ok(fs.existsSync(path.join(projectRoot, taxonomy.iconFor("storm", "lightning"))));
 
   const home = readPage("index.html");
   assert.ok(home.includes('feature.properties.hazardDetail || ""'));
@@ -100,6 +105,6 @@ test("every hazard surface uses the shared icon taxonomy", () => {
   assert.ok(!reports.includes('const typeColors = { "🔥"'));
 
   const moderation = readPage("moderation.html");
-  assert.ok(moderation.includes("const icon = AlertlyHazards.iconFor(cat"));
+  assert.ok(moderation.includes("const icon = AlertlyHazards.iconMarkupFor(cat"));
   assert.ok(moderation.includes('className: "hazard-symbol-wrap"'));
 });

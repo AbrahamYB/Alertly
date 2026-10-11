@@ -1,0 +1,21 @@
+OpenMoji Color SVG hazard icons
+
+Version: 17.0.0
+Source: https://github.com/hfg-gmuend/openmoji
+License: Creative Commons Attribution-ShareAlike 4.0 International
+License text: https://creativecommons.org/licenses/by-sa/4.0/
+
+Attribution suggested by OpenMoji:
+All emojis designed by OpenMoji – the open-source emoji and icon project.
+License: CC BY-SA 4.0
+
+Files selected for Alertly:
+E09F flood
+E08E warning fire
+1F300 cyclone
+26C8 cloud with lightning and rain
+E099 volcano eruption
+1F6D8 landslide
+E09C earthquake
+1F3DC desert (used as drought / water scarcity candidate)
+1F321 thermometer (used as extreme heat candidate)

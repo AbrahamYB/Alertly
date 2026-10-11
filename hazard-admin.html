@@ -381,8 +381,17 @@
       cursor: pointer;
     }
 
-    .hazard-symbol > span {
+    .hazard-symbol > .hazard-marker-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
       transform: rotate(8deg);
+    }
+
+    .icon > .hazard-list-icon {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
     }
 
     .hazard-symbol.selected {
@@ -715,7 +724,6 @@
   <script src="/vendor/leaflet/leaflet.js?v=1.9.4"></script>
   <script src="/hazard-ui.js"></script>
   <script>
-    const HAZARD_ICONS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.icon]));
     const CATEGORY_NAMES = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.label]));
     const HAZARD_COLORS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.color]));
 
@@ -804,7 +812,7 @@
           title: hazard.properties.title || "",
           icon: L.divIcon({
             className: "hazard-symbol-wrap",
-            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${AlertlyHazards.iconFor(hazardType, `${hazard.properties.hazardDetail || ""} ${hazard.properties.title || ""} ${hazard.properties.description || ""}`)}</span></div>`,
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}">${AlertlyHazards.iconMarkupFor(hazardType, `${hazard.properties.hazardDetail || ""} ${hazard.properties.title || ""} ${hazard.properties.description || ""}`, "hazard-marker-icon")}</div>`,
             iconSize: [24, 24],
             iconAnchor: [12, 12]
           })
@@ -875,7 +883,7 @@
         const cardsHtml = items.map(h => `
           <button class="hazard-card ${selectedHazard?.id === h.id ? "active" : ""}" data-id="${escapeHtml(h.id)}">
             <div class="card-row">
-              <span class="icon">${AlertlyHazards.iconFor(h.properties.hazard, `${h.properties.hazardDetail || ""} ${h.properties.title || ""} ${h.properties.description || ""}`)}</span>
+              <span class="icon">${AlertlyHazards.iconMarkupFor(h.properties.hazard, `${h.properties.hazardDetail || ""} ${h.properties.title || ""} ${h.properties.description || ""}`, "hazard-list-icon")}</span>
               <span class="title">${escapeHtml(h.properties.title)}</span>
             </div>
             <div class="meta">${escapeHtml(h.properties.source)} · ${new Date(h.properties.lastUpdatedAt || h.properties.detectedAt).toLocaleDateString()}</div>

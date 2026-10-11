@@ -652,8 +652,20 @@
       transform: rotate(-8deg);
     }
 
-    .hazard-symbol > span {
+    .hazard-symbol > .hazard-marker-icon {
+      width: 17px;
+      height: 17px;
+      object-fit: contain;
       transform: rotate(8deg);
+    }
+
+    .category-hazard-icon,
+    .type-hazard-icon {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      flex: 0 0 auto;
+      vertical-align: middle;
     }
 
     .hazard-symbol.selected {
@@ -1203,7 +1215,8 @@
   <script>
     const CATEGORIES = AlertlyHazards.categories.map(category => ({
       id: category.id,
-      label: `${category.icon} ${category.label}`,
+      label: category.label,
+      icon: category.icon,
       color: category.color
     }));
 
@@ -1493,7 +1506,7 @@
         const lat = Number.isFinite(report.lat) ? report.lat : (geometry.coordinates?.[1] || 15);
         const lng = Number.isFinite(report.lng) ? report.lng : (geometry.coordinates?.[0] || -88);
         const opacity = modStatus === "rejected" ? 0.45 : 1;
-        const icon = AlertlyHazards.iconFor(cat, `${report.type || ""} ${report.text || ""}`);
+        const icon = AlertlyHazards.iconMarkupFor(cat, `${report.type || ""} ${report.text || ""}`, "hazard-marker-icon");
         layer = L.marker([lat, lng], {
           keyboard: true,
           riseOnHover: true,
@@ -1502,7 +1515,7 @@
           opacity,
           icon: L.divIcon({
             className: "hazard-symbol-wrap",
-            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}"><span>${icon}</span></div>`,
+            html: `<div class="hazard-symbol ${isSelected ? "selected" : ""}" style="--hazard-color:${color}">${icon}</div>`,
             iconSize: [24, 24],
             iconAnchor: [12, 12]
           })
@@ -1579,7 +1592,7 @@
         const count = counts[cat.id] ?? 0;
         return `
           <button class="cat-btn ${isActive ? "active" : ""}" data-cat-select="${cat.id}">
-            <span class="cat-label">${escapeHtml(cat.label)}</span>
+            <span class="cat-label">${cat.id === "all" ? escapeHtml(cat.label) : `${AlertlyHazards.iconMarkupFor(cat.id, "", "category-hazard-icon")} ${escapeHtml(cat.label)}`}</span>
             <span class="cat-badge">${count}</span>
           </button>
         `;
@@ -1614,7 +1627,7 @@
         return `
           <button class="report-card ${isSelected ? "active" : ""}" data-id="${escapeHtml(report.id)}">
             <div class="card-top">
-              <span class="type-badge-dot" style="background: ${catObj.color}"></span>
+              ${AlertlyHazards.iconMarkupFor(cat, `${report.type || ""} ${report.text || ""}`, "type-hazard-icon")}
               <span class="card-title">${escapeHtml(report.type || "Report")}</span>
               <span class="card-time">${formatRelativeAge(report.createdAt)}</span>
             </div>

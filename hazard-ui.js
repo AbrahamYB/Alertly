@@ -1,14 +1,14 @@
 (function initializeHazardTaxonomy(globalObject) {
   const categories = Object.freeze([
-    Object.freeze({ id: "flood", icon: "🌊", label: "Flooded Areas", color: "#0ea5e9" }),
-    Object.freeze({ id: "fire", icon: "🔥", label: "Wildfire / Thermal", color: "#ef4444" }),
-    Object.freeze({ id: "storm", icon: "🌀", label: "Storms / Cyclones", color: "#818cf8" }),
-    Object.freeze({ id: "volcano", icon: "🌋", label: "Volcanic Activity", color: "#b91c1c" }),
-    Object.freeze({ id: "landslide", icon: "⛰️", label: "Landslides / Mudslides", color: "#a16207" }),
-    Object.freeze({ id: "earthquake", icon: "🫨", label: "Earthquake / Seismic", color: "#71717a" }),
-    Object.freeze({ id: "drought", icon: "🏜️", label: "Drought / Water Scarcity", color: "#f59e0b" }),
-    Object.freeze({ id: "heatwave", icon: "🌡️", label: "Extreme Heat", color: "#f97316" }),
-    Object.freeze({ id: "other", icon: "⚠️", label: "Other Hazards", color: "#6366f1" }),
+    Object.freeze({ id: "flood", icon: "/assets/hazards/flood.svg", label: "Flooded Areas", color: "#0ea5e9" }),
+    Object.freeze({ id: "fire", icon: "/assets/hazards/fire.svg", label: "Wildfire / Thermal", color: "#ef4444" }),
+    Object.freeze({ id: "storm", icon: "/assets/hazards/storm.svg", label: "Storms / Cyclones", color: "#818cf8" }),
+    Object.freeze({ id: "volcano", icon: "/assets/hazards/volcano.svg", label: "Volcanic Activity", color: "#b91c1c" }),
+    Object.freeze({ id: "landslide", icon: "/assets/hazards/landslide.svg", label: "Landslides / Mudslides", color: "#a16207" }),
+    Object.freeze({ id: "earthquake", icon: "/assets/hazards/earthquake.svg", label: "Earthquake / Seismic", color: "#71717a" }),
+    Object.freeze({ id: "drought", icon: "/assets/hazards/drought.svg", label: "Drought / Water Scarcity", color: "#f59e0b" }),
+    Object.freeze({ id: "heatwave", icon: "/assets/hazards/heatwave.svg", label: "Extreme Heat", color: "#f97316" }),
+    Object.freeze({ id: "other", icon: "/assets/hazards/other.svg", label: "Other Hazards", color: "#6366f1" }),
   ]);
   const byId = Object.freeze(Object.fromEntries(categories.map((category) => [category.id, category])));
 
@@ -30,10 +30,23 @@
     const category = normalize(value);
     if (category !== "storm") return byId[category]?.icon || byId.other.icon;
     const detail = `${value || ""} ${context || ""}`.toLowerCase();
-    if (/(lightning|thunder|⛈️)/.test(detail)) return "⛈️";
-    if (/(tornado|🌪️)/.test(detail)) return "🌪️";
+    if (/(lightning|thunder|⛈️)/.test(detail)) return "/assets/hazards/lightning-storm.svg";
     return byId.storm.icon;
   }
 
-  globalObject.AlertlyHazards = Object.freeze({ categories, byId, normalize, iconFor });
+  function iconMarkupFor(value, context = "", className = "hazard-icon") {
+    const safeClassName = String(className || "hazard-icon").replace(/[^a-z0-9 _-]/gi, "").trim() || "hazard-icon";
+    return `<img class="${safeClassName}" src="${iconFor(value, context)}" alt="" aria-hidden="true">`;
+  }
+
+  function createIcon(value, context = "", className = "hazard-icon") {
+    const image = globalObject.document.createElement("img");
+    image.className = className;
+    image.src = iconFor(value, context);
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    return image;
+  }
+
+  globalObject.AlertlyHazards = Object.freeze({ categories, byId, normalize, iconFor, iconMarkupFor, createIcon });
 })(globalThis);

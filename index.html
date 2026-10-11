@@ -265,6 +265,20 @@
       color: var(--text);
     }
 
+    .toggle-row > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .layer-hazard-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      flex: 0 0 auto;
+      vertical-align: middle;
+    }
+
 .time-row {
       display: flex;
       align-items: center;
@@ -782,7 +796,12 @@ scroll-behavior: auto !important;
       transform: rotate(-8deg);
     }
 
-    .hazard-symbol > span { transform: rotate(8deg); }
+    .hazard-symbol > .hazard-marker-icon {
+      width: 17px;
+      height: 17px;
+      object-fit: contain;
+      transform: rotate(8deg);
+    }
 
     .leaflet-popup-content-wrapper {
       max-width: min(330px, calc(100vw - 28px)) !important;
@@ -967,42 +986,42 @@ scroll-behavior: auto !important;
         <div class="section-title">Layers</div>
 
         <div class="toggle-row">
-          <span>🌊 Flooded Areas</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/flood.svg" alt=""> Flooded Areas</span>
           <label class="switch"><input type="checkbox" id="floodToggle"><span class="slider"></span></label>
         </div>
 
 <div class="toggle-row">
-          <span>🔥 Affected by Wildfires</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/fire.svg" alt=""> Affected by Wildfires</span>
           <label class="switch"><input type="checkbox" id="fireToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>🌀 Storms / Cyclones</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/storm.svg" alt=""> Storms / Cyclones</span>
           <label class="switch"><input type="checkbox" id="stormToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>🌋 Volcanic Activity</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/volcano.svg" alt=""> Volcanic Activity</span>
           <label class="switch"><input type="checkbox" id="volcanoToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>⛰️ Landslides / Mudslides</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/landslide.svg" alt=""> Landslides / Mudslides</span>
           <label class="switch"><input type="checkbox" id="landslideToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>🫨 Earthquake / Seismic</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/earthquake.svg" alt=""> Earthquake / Seismic</span>
           <label class="switch"><input type="checkbox" id="earthquakeToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>🏜️ Drought / Water Scarcity</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/drought.svg" alt=""> Drought / Water Scarcity</span>
           <label class="switch"><input type="checkbox" id="droughtToggle"><span class="slider"></span></label>
         </div>
 
         <div class="toggle-row">
-          <span>🌡️ Extreme Heat</span>
+          <span><img class="layer-hazard-icon" src="/assets/hazards/heatwave.svg" alt=""> Extreme Heat</span>
           <label class="switch"><input type="checkbox" id="heatwaveToggle"><span class="slider"></span></label>
         </div>
       </div>
@@ -1293,7 +1312,7 @@ scroll-behavior: auto !important;
             if (feature.geometry.type === "Point") {
               const [lng, lat] = feature.geometry.coordinates;
               const style = styleFor(hType, severity);
-              const hazardIcon = AlertlyHazards.iconFor(hType, `${feature.properties.hazardDetail || ""} ${title} ${description}`);
+              const hazardIcon = AlertlyHazards.iconMarkupFor(hType, `${feature.properties.hazardDetail || ""} ${title} ${description}`, "hazard-marker-icon");
               layer = L.marker([lat, lng], {
                 keyboard: true,
                 riseOnHover: true,
@@ -1301,7 +1320,7 @@ scroll-behavior: auto !important;
                 title: title,
                 icon: L.divIcon({
                   className: "hazard-symbol-wrap",
-                  html: `<div class="hazard-symbol" style="--hazard-color:${style.color}"><span>${hazardIcon}</span></div>`,
+                  html: `<div class="hazard-symbol" style="--hazard-color:${style.color}">${hazardIcon}</div>`,
                   iconSize: [26, 26],
                   iconAnchor: [13, 13],
                   popupAnchor: [0, -13]

@@ -986,7 +986,7 @@
       position: relative;
     }
 
-    .rc-emoji-badge {
+    .rc-hazard-badge {
       width: 42px;
       height: 42px;
       border-radius: 14px;
@@ -998,6 +998,12 @@
       font-size: 22px;
       flex-shrink: 0;
       backdrop-filter: blur(4px);
+    }
+
+    .rc-hazard-badge img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
     }
 
     .rc-header-text {
@@ -1160,8 +1166,26 @@
       transform: rotate(-8deg);
     }
 
-    .hazard-symbol > span {
+    .hazard-symbol > .hazard-marker-icon {
+      width: 17px;
+      height: 17px;
+      object-fit: contain;
       transform: rotate(8deg);
+    }
+
+    .chip .hazard-chip-icon {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      flex: 0 0 auto;
+      vertical-align: middle;
+    }
+
+    #currentType .hazard-chip-icon {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      vertical-align: middle;
     }
 
     .hazard-symbol.pin-pop {
@@ -1755,7 +1779,7 @@
 <div class="main">
       <div class="map-title">
         <h1>Community Reports</h1>
-        <div id="currentType" class="subtitle">Selected: ⚠️ Other Hazards</div>
+        <div id="currentType" class="subtitle">Selected: Other Hazards</div>
       </div>
       <div id="map"></div>
     </div>
@@ -1861,7 +1885,7 @@
     const radiusSlider = document.getElementById("radiusSlider");
     const radiusValue = document.getElementById("radiusValue");
 
-let selectedType = `${AlertlyHazards.byId.other.icon} ${AlertlyHazards.byId.other.label}`;
+    let selectedType = "other";
     let selectedRadius = 300;
     let userCoords = null;
     let mapMovedByUser = false;
@@ -2039,24 +2063,36 @@ const map = L.map("map", {
 
     let miniMap = null, miniMapInitialized = false, miniRadiusCircle = null, miniCustomMarker = null;
 
-const TYPES = AlertlyHazards.categories.map(category => `${category.icon} ${category.label}`);
-    const HAZARD_COLORS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.icon, category.color]));
+    const TYPES = AlertlyHazards.categories;
+    const HAZARD_COLORS = Object.fromEntries(AlertlyHazards.categories.map(category => [category.id, category.color]));
     function getHazardColor(type = selectedType) {
-      const emoji = (type || "").split(" ")[0];
-      return HAZARD_COLORS[emoji] || "#6366f1";
+      return HAZARD_COLORS[AlertlyHazards.normalize(type)] || "#6366f1";
+    }
+
+    function renderSelectedType() {
+      const category = AlertlyHazards.byId[selectedType] || AlertlyHazards.byId.other;
+      currentType.replaceChildren(
+        document.createTextNode("Selected: "),
+        AlertlyHazards.createIcon(category.id, "", "hazard-chip-icon"),
+        document.createTextNode(` ${category.label}`)
+      );
     }
 
     function renderChips() {
       chipBar.innerHTML = "";
-      for (const t of TYPES) {
+      for (const category of TYPES) {
         const btn = document.createElement("div");
-        btn.className = "chip" + (t === selectedType ? " active" : "");
-        btn.textContent = t;
-        btn.addEventListener("click", () => selectType(t));
+        btn.className = "chip" + (category.id === selectedType ? " active" : "");
+        btn.append(
+          AlertlyHazards.createIcon(category.id, "", "hazard-chip-icon"),
+          document.createTextNode(category.label)
+        );
+        btn.addEventListener("click", () => selectType(category.id));
         chipBar.appendChild(btn);
       }
     }
     renderChips();
+    renderSelectedType();
 
 let selectedFiles = [], selectedPreviewUrls = [];
 
@@ -2707,7 +2743,9 @@ let pendingReport = null, pendingMarker = null;
     }));
 
     function selectType(type) {
-      selectedType = type; currentType.innerText = "Selected: " + type; renderChips();
+      selectedType = AlertlyHazards.normalize(type);
+      renderSelectedType();
+      renderChips();
       updateDraftGeometry();
       if (pendingReport) {
         pendingReport.type = type;
@@ -2896,7 +2934,7 @@ let pendingReport = null, pendingMarker = null;
     function addReportToMap(data) {
       const categoryId = AlertlyHazards.normalize(data.type);
       const category = AlertlyHazards.byId[categoryId] || AlertlyHazards.byId.other;
-      const emoji = AlertlyHazards.iconFor(categoryId, `${data.type || ""} ${data.text || ""}`);
+      const hazardIcon = AlertlyHazards.iconMarkupFor(categoryId, `${data.type || ""} ${data.text || ""}`, "hazard-card-icon");
       const label = category.label;
       const images = Array.isArray(data.images) ? data.images : [];
       const shapeColor = category.color;
@@ -2928,7 +2966,7 @@ let pendingReport = null, pendingMarker = null;
       const popupHtml =
         '<div class="report-card">' +
         '<div class="rc-header" style="background:' + grad + '">' +
-        '<div class="rc-emoji-badge">' + emoji + '</div>' +
+        '<div class="rc-hazard-badge">' + hazardIcon + '</div>' +
         '<div class="rc-header-text">' +
         '<div class="rc-type-label">' + escapeHtml(label) + '</div>' +
         '<div class="rc-meta">' + escapeHtml(ago) + '</div>' +
@@ -2960,7 +2998,7 @@ let pendingReport = null, pendingMarker = null;
           alt: label,
           icon: L.divIcon({
             className: "hazard-symbol-wrap",
-            html: `<div class="${pinClass}" style="--hazard-color:${shapeColor}"><span>${emoji}</span></div>`,
+            html: `<div class="${pinClass}" style="--hazard-color:${shapeColor}">${AlertlyHazards.iconMarkupFor(categoryId, `${data.type || ""} ${data.text || ""}`, "hazard-marker-icon")}</div>`,
             iconSize: [26, 26],
             iconAnchor: [13, 13],
             popupAnchor: [0, -13]
