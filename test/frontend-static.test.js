@@ -68,7 +68,7 @@ test("public report map refreshes existing markers after moderation changes", ()
 
 test("every hazard surface uses the shared icon taxonomy", () => {
   for (const filename of ["index.html", "report.html", "moderation.html", "hazard-admin.html"]) {
-    assert.ok(readPage(filename).includes('<script src="/hazard-ui.js"></script>'), `${filename} must load the shared hazard taxonomy`);
+    assert.ok(readPage(filename).includes('<script src="/hazard-ui.js?v=20261010-icons"></script>'), `${filename} must load the versioned shared hazard taxonomy`);
   }
 
   const context = {};

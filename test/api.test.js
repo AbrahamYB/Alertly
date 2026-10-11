@@ -50,6 +50,7 @@ test("GET /hazard-ui.js serves the shared hazard taxonomy", async () => {
   const response = await fetch(`${BASE_URL}/hazard-ui.js`);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") || "", /javascript/);
+  assert.match(response.headers.get("cache-control") || "", /no-cache/);
   assert.match(await response.text(), /function iconFor/);
 });
 
