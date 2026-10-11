@@ -157,6 +157,12 @@ app.use("/vendor/leaflet", express.static(path.join(__dirname, "node_modules", "
   immutable: true,
   maxAge: "30d",
 }));
+app.use("/assets/hazards", express.static(path.join(__dirname, "assets", "hazards"), {
+  dotfiles: "deny",
+  index: false,
+  immutable: true,
+  maxAge: "30d",
+}));
 // Create the hazard collection on first start.
 if (!fs.existsSync(HAZARDS_FILE) && HAZARDS_FILE !== BUNDLED_HAZARDS_FILE && fs.existsSync(BUNDLED_HAZARDS_FILE)) {
   fs.copyFileSync(BUNDLED_HAZARDS_FILE, HAZARDS_FILE);
